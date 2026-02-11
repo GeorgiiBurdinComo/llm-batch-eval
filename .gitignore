@@ -1,0 +1,11 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+data/batch_ids.json
+data/baseline_predictions.json
+data/results/
+batches/
+reports/
+*.jsonl

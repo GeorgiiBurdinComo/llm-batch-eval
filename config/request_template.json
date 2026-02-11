@@ -1,0 +1,29 @@
+{
+  "store": true,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "name": "CampaignRelevanceMinimal",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "campaign_relevant": {
+            "type": "boolean"
+          },
+          "relevancy_reasoning": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "campaign_relevant",
+          "relevancy_reasoning"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "metadata": {
+    "endpoint": "campaign-relevance"
+  }
+}
