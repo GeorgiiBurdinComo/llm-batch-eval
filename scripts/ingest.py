@@ -254,18 +254,18 @@ def ingest_results(
 
 def _extract_openai_text(body: Dict) -> Optional[str]:
     """Get assistant text from OpenAI Responses API body (output array or legacy .text)."""
-    text_obj = body.get("text")
-    if isinstance(text_obj, str):
-        return text_obj
-    if isinstance(text_obj, dict):
-        return json.dumps(text_obj) if text_obj else None
-    # Responses API: output = [reasoning?, message]
+    # Prefer output[] (actual response); body.text is often the request schema in batch responses
     for out in body.get("output") or []:
         if out.get("type") != "message":
             continue
         for block in out.get("content") or []:
             if block.get("type") == "output_text" and "text" in block:
                 return block["text"]
+    text_obj = body.get("text")
+    if isinstance(text_obj, str):
+        return text_obj
+    if isinstance(text_obj, dict):
+        return json.dumps(text_obj) if text_obj else None
     return None
 
 

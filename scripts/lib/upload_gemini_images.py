@@ -124,11 +124,19 @@ def ensure_images_uploaded(
     total = len(urls_to_upload)
     print(f"[upload_gemini_images] Uploading {total} images to Gemini Files API (workers={workers})...")
 
+    import requests
     completed = 0
+    skipped = 0
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(_upload_one, url, client): url for url in urls_to_upload}
         for fut in as_completed(futures):
-            url, uri, name = fut.result()
+            try:
+                url, uri, name = fut.result()
+            except requests.exceptions.HTTPError as e:
+                url = futures.get(fut, "?")
+                print(f"[upload_gemini_images] Skip (403/error): {str(url)[:80]}...")
+                skipped += 1
+                continue
             entries[url] = {
                 "uri": uri,
                 "name": name,
@@ -140,7 +148,7 @@ def ensure_images_uploaded(
                 print(f"[upload_gemini_images] Progress: {completed}/{total} (cache saved)")
 
     save_image_cache(cache_path, entries)
-    print(f"[upload_gemini_images] Done: {total} uploaded, cache saved to {cache_path}")
+    print(f"[upload_gemini_images] Done: {completed} uploaded" + (f", {skipped} skipped (403/error)" if skipped else "") + f", cache saved to {cache_path}")
 
     return load_image_cache(cache_path)
 

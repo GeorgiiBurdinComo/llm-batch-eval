@@ -6,25 +6,34 @@ Optionally write a chart to reports/.
 import json
 import os
 import sys
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ingest import _extract_prediction, get_ground_truth
+from ingest import (
+    _compute_cost_breakdown,
+    _extract_prediction,
+    _get_effective_response,
+    _load_pricing,
+    _normalize_usage,
+    get_ground_truth,
+)
 
 
-def accuracy_per_model(
+def accuracy_and_cost_per_model(
     results_dir: str = "data/results",
     ground_truth_csv: Optional[str] = "input/dataset.csv",
     langfuse_dataset_name: Optional[str] = None,
-) -> Dict[str, float]:
-    """Compute accuracy (0–1) per model from JSONL files."""
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Compute accuracy (0–1) and total cost USD per model from JSONL files."""
     if not os.path.isdir(results_dir):
-        return {}
+        return {}, {}
     truth = get_ground_truth(ground_truth_csv=ground_truth_csv, langfuse_dataset_name=langfuse_dataset_name)
-    by_model: Dict[str, list] = {}
+    pricing = _load_pricing()
+    acc_by_model: Dict[str, float] = {}
+    cost_by_model: Dict[str, float] = {}
 
     for name in os.listdir(results_dir):
         if not name.endswith(".jsonl"):
@@ -35,6 +44,7 @@ def accuracy_per_model(
         provider = "openai" if stem.startswith("openai") else "gemini"
         path = os.path.join(results_dir, name)
         correct, total = 0, 0
+        cost_usd = 0.0
         with open(path, "r") as f:
             for line in f:
                 line = line.strip()
@@ -42,16 +52,24 @@ def accuracy_per_model(
                     continue
                 obj = json.loads(line)
                 cid = obj.get("custom_id") or obj.get("key")
+                resp = obj.get("response", {})
+                effective = _get_effective_response(resp, provider)
+                # Accuracy
                 expected = truth.get(str(cid)) if cid is not None else None
-                if expected is None:
-                    continue
-                pred = _extract_prediction(obj.get("response", {}), provider)
-                total += 1
-                if pred == expected:
-                    correct += 1
+                if expected is not None:
+                    pred = _extract_prediction(effective, provider)
+                    total += 1
+                    if pred == expected:
+                        correct += 1
+                # Cost
+                prompt_tok, completion_tok, _ = _normalize_usage(effective, provider)
+                breakdown = _compute_cost_breakdown(model, prompt_tok, completion_tok, pricing)
+                if breakdown is not None:
+                    cost_usd += breakdown["total_cost"]
         if total:
-            by_model[model] = correct / total
-    return by_model
+            acc_by_model[model] = correct / total
+        cost_by_model[model] = cost_usd
+    return acc_by_model, cost_by_model
 
 
 def generate_report(
@@ -60,15 +78,16 @@ def generate_report(
     langfuse_dataset_name: Optional[str] = None,
     report_dir: str = "reports",
 ) -> str:
-    """Print accuracy table and optionally save a bar chart. Returns report path."""
-    acc = accuracy_per_model(results_dir, ground_truth_csv, langfuse_dataset_name)
+    """Print accuracy + cost table and optionally save a dual-axis bar chart. Returns report path."""
+    acc, costs = accuracy_and_cost_per_model(results_dir, ground_truth_csv, langfuse_dataset_name)
     if not acc:
         print("[report] No result JSONLs found")
         return ""
 
-    lines = ["model,accuracy"]
-    for model in sorted(acc):
-        lines.append(f"{model},{acc[model]:.4f}")
+    models = sorted(acc)
+    lines = ["model,accuracy,cost_usd"]
+    for model in models:
+        lines.append(f"{model},{acc[model]:.4f},{costs.get(model, 0):.6f}")
     text = "\n".join(lines)
     print(text)
 
@@ -80,15 +99,25 @@ def generate_report(
 
     try:
         import matplotlib.pyplot as plt
-        models = sorted(acc)
-        plt.figure(figsize=(max(8, len(models) * 0.5), 4))
-        plt.bar(range(len(models)), [acc[m] for m in models], color="steelblue", edgecolor="navy")
-        plt.xticks(range(len(models)), models, rotation=45, ha="right")
-        plt.ylabel("Accuracy")
-        plt.title("Accuracy by model")
-        plt.tight_layout()
+        import numpy as np
+        fig, ax1 = plt.subplots(figsize=(max(8, len(models) * 0.5), 5))
+        x = np.arange(len(models))
+        width = 0.35
+        bars1 = ax1.bar(x - width / 2, [acc[m] for m in models], width, color="steelblue", edgecolor="navy", label="Accuracy")
+        ax1.set_ylabel("Accuracy", color="steelblue")
+        ax1.set_ylim(0.8, 1.02)
+        ax1.tick_params(axis="y", labelcolor="steelblue")
+        ax2 = ax1.twinx()
+        bars2 = ax2.bar(x + width / 2, [costs.get(m, 0) for m in models], width, color="darkorange", alpha=0.8, edgecolor="chocolate", label="Cost (USD)")
+        ax2.set_ylabel("Cost (USD)", color="darkorange")
+        ax2.tick_params(axis="y", labelcolor="darkorange")
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(models, rotation=45, ha="right")
+        ax1.set_title("Accuracy and cost by model")
+        fig.legend(loc="upper right", bbox_to_anchor=(1.12, 1))
+        fig.tight_layout()
         chart_path = os.path.join(report_dir, "accuracy_chart.png")
-        plt.savefig(chart_path, dpi=100)
+        plt.savefig(chart_path, dpi=100, bbox_inches="tight")
         plt.close()
         print(f"[report] Wrote {chart_path}")
     except Exception as e:

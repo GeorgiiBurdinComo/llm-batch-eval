@@ -45,11 +45,11 @@ def poll_until_done(
                 st = batch_gemini.get_gemini_batch_status(bid)
             if st["status"] == "completed":
                 out_path = os.path.join(results_dir, f"{provider}_{model}.jsonl")
-                if not os.path.isfile(out_path):
-                    if provider == "openai":
-                        batch_openai.download_openai_batch_results(bid, out_path)
-                    else:
-                        batch_gemini.download_gemini_batch_results(bid, out_path)
+                # Always re-download so we overwrite stale results from an older run (e.g. 5 vs 100)
+                if provider == "openai":
+                    batch_openai.download_openai_batch_results(bid, out_path)
+                else:
+                    batch_gemini.download_gemini_batch_results(bid, out_path)
             elif st["status"] in ("failed", "cancelled", "expired"):
                 print(f"[poll] {provider}/{model} {st['status']}")
             else:

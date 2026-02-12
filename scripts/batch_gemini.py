@@ -67,6 +67,20 @@ def _collect_image_urls(examples: List[Dict]) -> Set[str]:
     return urls
 
 
+def _example_uses_urls(example: Dict, urls: Set[str]) -> bool:
+    """True if example references any of the given URLs."""
+    body = example.get("body", {})
+    for msg in body.get("input", []):
+        content = msg.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if part.get("type") == "input_image":
+                    u = part.get("image_url")
+                    if u in urls:
+                        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Message conversion (Responses API → native Gemini format)
 # ---------------------------------------------------------------------------
@@ -203,12 +217,21 @@ def create_gemini_batch(
 
     missing = image_urls - set(url_to_uri.keys())
     if missing:
-        raise RuntimeError(
-            f"{len(missing)} image(s) missing from cache (expired or not uploaded). "
-            f"Run: python scripts/upload_gemini_images.py\n"
-            f"Cache path: {cache_path}\n"
-            f"First missing: {sorted(missing)[0][:120]}"
-        )
+        # Skip examples that use failed URLs (e.g. 403 from Instagram CDN)
+        n_before = len(examples)
+        examples = [ex for ex in examples if not _example_uses_urls(ex, missing)]
+        n_skipped = n_before - len(examples)
+        image_urls = _collect_image_urls(examples)
+        missing = image_urls - set(url_to_uri.keys())
+        if missing:
+            raise RuntimeError(
+                f"{len(missing)} image(s) still missing after filtering. "
+                f"Cache path: {cache_path}\n"
+                f"First missing: {sorted(missing)[0][:120]}"
+            )
+        if not examples:
+            raise RuntimeError("All examples use missing image URLs; cannot create batch")
+        print(f"[batch_gemini] Skipped {n_skipped} example(s) with inaccessible images")
 
     if image_urls:
         print(f"[batch_gemini] Using {len(url_to_uri)} images from cache {cache_path}")
