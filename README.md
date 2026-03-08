@@ -38,13 +38,7 @@ pip install -r requirements.txt
 # Create .env with OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 ```
 
-### 2. Sync dataset to Langfuse (once per dataset)
-
-```bash
-python scripts/sync_dataset.py --csv input/dataset.csv --name campaign_relevance
-```
-
-### 3. Submit batches (subset of 5)
+### 2. Submit batches (subset of 5)
 
 ```bash
 python scripts/run_eval.py --subset-size 5
@@ -54,9 +48,9 @@ python scripts/run_eval.py --subset-size 5
 - For Gemini: uploads dataset images to Gemini Files API (or uses cache in `data/gemini_image_cache.json`) then submits batch.
 - Writes `data/batch_ids.json`.
 
-### 4. Wait for batches, then poll, download, and ingest
+### 3. Wait for batches, then poll, download, and ingest
 
-Batches usually finish within minutes to a few hours. Then:
+Batches usually finish within few hours. Then:
 
 ```bash
 python scripts/poll_and_ingest.py
@@ -64,11 +58,11 @@ python scripts/poll_and_ingest.py
 
 - Polls every 5 min, downloads results to `data/results/`, ingests traces and accuracy scores into Langfuse, updates `data/baseline_predictions.json`.
 
-### 5. Open the dashboard in Langfuse
+### 4. View traces and dashboard
 
-1. Go to your Langfuse project.
-2. **Scores** (or Analytics): filter **Score name** = `accuracy`, group by **metadata.model**, set time range.
-3. **Traces**: filter by tag `batch_evaluation` and metadata `batch_eval: true` to see only this run.
+Traces and accuracy scores live in **Langfuse**. The Streamlit app is a read-only viewer that displays them:
+
+- **Dashboard:** https://llm-eval-dashboard.streamlit.app/
 
 Details: [docs/DASHBOARDS.md](docs/DASHBOARDS.md).
 
@@ -78,7 +72,6 @@ Details: [docs/DASHBOARDS.md](docs/DASHBOARDS.md).
 
 ```bash
 pip install -r requirements.txt
-python scripts/sync_dataset.py --csv input/dataset.csv
 python scripts/run_eval.py --subset-size 300
 # After batches complete:
 python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json
