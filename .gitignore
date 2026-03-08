@@ -10,8 +10,3 @@ batches/
 reports/
 data/
 *.jsonl
-accuracy_chart.png
-accuracy_report.csv
-batch_ids.json
-data/dataset_distribution.json
-data/gemini_image_cache.json
