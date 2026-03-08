@@ -10,6 +10,7 @@ Set these in your environment (or in a `.env` file at project root; see table be
 |----------|--------|---------|
 | `OPENAI_API_KEY` | batch_openai, run_eval, poll_and_ingest | OpenAI Batch API |
 | `GOOGLE_API_KEY` | batch_gemini, upload_gemini_images | Gemini Batch API + Files (images) |
+| `ANTHROPIC_API_KEY` | batch_claude, run_eval, poll_and_ingest | Claude (Anthropic) Message Batches |
 | `LANGFUSE_PUBLIC_KEY` | sync_dataset, ingest, poll_and_ingest | Langfuse project |
 | `LANGFUSE_SECRET_KEY` | sync_dataset, ingest, poll_and_ingest | Langfuse auth |
 | `LANGFUSE_HOST` or `LANGFUSE_BASE_URL` | sync_dataset (optional) | Langfuse server URL if not cloud |
@@ -34,7 +35,7 @@ From **project root**. Use a subset of **5** for a fast end-to-end run.
 
 ```bash
 pip install -r requirements.txt
-# Create .env with OPENAI_API_KEY, GOOGLE_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+# Create .env with OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 ```
 
 ### 2. Sync dataset to Langfuse (once per dataset)
@@ -58,7 +59,7 @@ python scripts/run_eval.py --subset-size 5
 Batches usually finish within minutes to a few hours. Then:
 
 ```bash
-python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --results-dir data/results --interval 300 --max-wait 7200
+python scripts/poll_and_ingest.py
 ```
 
 - Polls every 5 min, downloads results to `data/results/`, ingests traces and accuracy scores into Langfuse, updates `data/baseline_predictions.json`.

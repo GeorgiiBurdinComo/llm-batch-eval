@@ -1,0 +1,84 @@
+# Manual evaluation: run with chosen models and subset size
+name: Manual evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: "Comma-separated model ids (e.g. gpt-5-mini,gemini-2.5-flash). Leave empty for all."
+        required: false
+      subset_size:
+        description: "Subset size"
+        required: false
+        default: 300
+        type: number
+
+env:
+  PYTHON_VERSION: "3.11"
+  RUN_ID: gha-${{ github.run_id }}
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Submit batches
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${{ inputs.models }}" ]; then
+            python scripts/run_eval.py --subset-size ${{ inputs.subset_size }} --models "${{ inputs.models }}" --run-id "$RUN_ID"
+          else
+            python scripts/run_eval.py --subset-size ${{ inputs.subset_size }} --run-id "$RUN_ID"
+          fi
+      - name: Upload batch IDs
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch_ids
+          path: data/batch_ids.json
+
+  poll_and_ingest:
+    needs: submit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: batch_ids
+          path: data/
+      - name: Poll, download, ingest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --interval 600 --max-wait 172800 --run-id "$RUN_ID"
+      - name: Generate report
+        run: |
+          python scripts/report.py --results-dir data/results --csv input/dataset.csv --report-dir reports --run-id "$RUN_ID" --timestamped --history reports/accuracy_history.csv
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results
+          path: data/results/
+      - name: Upload reports artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: reports/

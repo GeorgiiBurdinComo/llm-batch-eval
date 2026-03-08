@@ -1,12 +1,4 @@
-"""
-OpenAI batch helpers – simple, flat functions.
-
-Usage pattern:
-    batch_id = create_openai_batch(model, examples)
-    status = get_openai_batch_status(batch_id)
-    if status["status"] == "completed":
-        download_openai_batch_results(batch_id, "results/openai_<model>.jsonl")
-"""
+"""OpenAI batch helpers – create, poll, download via Responses API."""
 
 import json
 import os
@@ -14,89 +6,87 @@ from typing import Dict, List
 
 from openai import OpenAI
 
+_REASONING_PREFIXES = ("gpt-5", "o3", "o4")
 
-def _openai_client() -> OpenAI:
+
+def _client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set")
     return OpenAI(api_key=api_key)
 
 
-def create_openai_batch(model: str, examples: List[Dict], output_dir: str = "batches") -> str:
-    """
-    Create an OpenAI Batch job for the given model and examples.
+def create_openai_batch(
+    model: str,
+    examples: List[Dict],
+    output_dir: str = "batches",
+    reasoning_effort: str = None,
+) -> str:
+    """Create an OpenAI Batch job. Returns batch ID.
 
-    Each example must be a dict with:
-      - custom_id: unique id (string)
-      - body: dict matching the Responses API body (we override 'model')
+    reasoning_effort: "low"|"medium"|"high" for reasoning models. Defaults to "low".
     """
     os.makedirs(output_dir, exist_ok=True)
     jsonl_path = os.path.join(output_dir, f"openai_{model}.jsonl")
 
+    is_reasoning = any(model.startswith(p) for p in _REASONING_PREFIXES)
+    effort = reasoning_effort or ("low" if is_reasoning else None)
+
     with open(jsonl_path, "w", encoding="utf-8") as f:
         for ex in examples:
-            body = dict(ex["body"])  # shallow copy
+            body = dict(ex["body"])
             body["model"] = model
-            line = {
-                "custom_id": ex["custom_id"],
-                "method": "POST",
-                "url": "/v1/responses",
-                "body": body,
-            }
-            f.write(json.dumps(line) + "\n")
+            if effort and "reasoning" not in body:
+                body["reasoning"] = {"effort": effort}
+            f.write(json.dumps({
+                "custom_id": ex["custom_id"], "method": "POST",
+                "url": "/v1/responses", "body": body,
+            }) + "\n")
 
-    client = _openai_client()
-
+    client = _client()
     with open(jsonl_path, "rb") as f:
         file_obj = client.files.create(file=f, purpose="batch")
 
     batch = client.batches.create(
-        input_file_id=file_obj.id,
-        endpoint="/v1/responses",
-        completion_window="24h",
+        input_file_id=file_obj.id, endpoint="/v1/responses", completion_window="24h",
     )
-
     print(f"[batch_openai] Created batch {batch.id} for model {model}")
     return batch.id
 
 
 def get_openai_batch_status(batch_id: str) -> Dict:
-    """Return basic status info for a batch."""
-    client = _openai_client()
-    batch = client.batches.retrieve(batch_id)
+    batch = _client().batches.retrieve(batch_id)
     return {
-        "id": batch.id,
-        "status": batch.status,
+        "id": batch.id, "status": batch.status,
+        "output_file_id": getattr(batch, "output_file_id", None),
+        "error_file_id": getattr(batch, "error_file_id", None),
+    }
+
+
+def cancel_openai_batch(batch_id: str) -> Dict:
+    batch = _client().batches.cancel(batch_id)
+    return {
+        "id": batch.id, "status": batch.status,
         "output_file_id": getattr(batch, "output_file_id", None),
         "error_file_id": getattr(batch, "error_file_id", None),
     }
 
 
 def download_openai_batch_results(batch_id: str, output_path: str) -> None:
-    """
-    Download the completed batch results JSONL to output_path.
-    Raises if batch is not completed.
-    """
     status = get_openai_batch_status(batch_id)
     if status["status"] != "completed":
         raise RuntimeError(f"Batch {batch_id} not completed (status={status['status']})")
-
-    client = _openai_client()
     file_id = status["output_file_id"]
     if not file_id:
         raise RuntimeError(f"No output_file_id for batch {batch_id}")
 
-    resp = client.files.content(file_id)
-
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "wb") as f:
-        f.write(resp.read())
-
+        f.write(_client().files.content(file_id).read())
     print(f"[batch_openai] Downloaded results for {batch_id} → {output_path}")
 
 
 if __name__ == "__main__":
-    # Tiny smoke test wrapper (not for prod; real use via run_eval.py)
     import argparse
 
     p = argparse.ArgumentParser(description="Inspect OpenAI batch status")
@@ -108,4 +98,3 @@ if __name__ == "__main__":
     print(st)
     if args.download and st["status"] == "completed":
         download_openai_batch_results(args.batch_id, args.download)
-

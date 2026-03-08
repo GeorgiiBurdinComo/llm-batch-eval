@@ -1,8 +1,4 @@
-"""
-Ingest batch results JSONL into Langfuse as traces with accuracy scores and costs.
-
-Uses Langfuse SDK v3 (OpenTelemetry-based): root span as trace, generation as child, create_score for accuracy.
-"""
+"""Ingest batch results JSONL into Langfuse as traces with accuracy scores and costs."""
 
 import csv
 import json
@@ -24,43 +20,33 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_LANGFUSE_DATASET = "campaign_relevance_02e1a68ccb0f"
 
 
+# ── Ground truth loading ─────────────────────────────────────────────────────
+
 def _load_ground_truth_csv(csv_path: str) -> Dict[str, bool]:
-    """Load custom_id → ground_truth boolean from the dataset CSV."""
     truth: Dict[str, bool] = {}
     with open(csv_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+        for row in csv.DictReader(f):
             cid = row.get("custom_id")
-            if not cid:
-                continue
-            val = str(row.get("campaign_relevant", "")).strip().lower()
-            truth[cid] = val == "true"
-    return truth
-
-
-def _load_ground_truth_langfuse(dataset_name: str) -> Dict[str, bool]:
-    """Load custom_id → campaign_relevant from Langfuse dataset expected_output."""
-    truth, _ = _load_from_langfuse(dataset_name)
+            if cid:
+                truth[cid] = str(row.get("campaign_relevant", "")).strip().lower() == "true"
     return truth
 
 
 def _load_from_langfuse(dataset_name: str) -> Tuple[Dict[str, bool], Dict[str, Any]]:
-    """Load custom_id → campaign_relevant and custom_id → input from Langfuse dataset. Single API call."""
-    lf = get_client()
-    dataset = lf.get_dataset(dataset_name)
+    """Load ground truth and inputs from a Langfuse dataset in one API call."""
+    dataset = get_client().get_dataset(dataset_name)
     truth: Dict[str, bool] = {}
     inputs: Dict[str, Any] = {}
     for item in dataset.items:
-        cid = (item.metadata or {}).get("custom_id") or item.id
+        cid = str((item.metadata or {}).get("custom_id") or item.id)
         if not cid:
             continue
-        cid_str = str(cid)
-        val = False
         if item.expected_output and isinstance(item.expected_output, dict):
-            val = bool(item.expected_output.get("campaign_relevant", False))
-        truth[cid_str] = val
+            truth[cid] = bool(item.expected_output.get("campaign_relevant", False))
+        else:
+            truth[cid] = False
         if item.input is not None:
-            inputs[cid_str] = item.input
+            inputs[cid] = item.input
     return truth, inputs
 
 
@@ -68,193 +54,68 @@ def get_ground_truth(
     ground_truth_csv: Optional[str] = "input/dataset.csv",
     langfuse_dataset_name: Optional[str] = None,
 ) -> Dict[str, bool]:
-    """Load custom_id → campaign_relevant. Use Langfuse if langfuse_dataset_name is not None, else CSV."""
     if langfuse_dataset_name is not None:
         name = langfuse_dataset_name or os.getenv("LANGFUSE_DATASET_NAME") or DEFAULT_LANGFUSE_DATASET
-        return _load_ground_truth_langfuse(name)
-    return _load_ground_truth_csv(ground_truth_csv or "input/dataset.csv")
+        truth, _ = _load_from_langfuse(name)
+        return truth
+    csv_path = ground_truth_csv or "input/dataset.csv"
+    if not os.path.isabs(csv_path):
+        csv_path = os.path.join(ROOT, csv_path)
+    return _load_ground_truth_csv(csv_path)
 
+
+# ── Response parsing ─────────────────────────────────────────────────────────
 
 def _get_effective_response(response: Dict, provider: str) -> Dict:
-    """Response body for extraction/usage: OpenAI batch puts payload in response.body."""
     if provider == "openai":
         return response.get("body") or response
     return response
 
 
-def _normalize_usage(effective_response: Dict, provider: str) -> Tuple[int, int, int]:
-    """Return (prompt_tokens, completion_tokens, total_tokens) for usage_details."""
+def _normalize_usage(effective: Dict, provider: str) -> Tuple[int, int, int]:
+    """Return (input_tokens, output_tokens, total_tokens). Includes reasoning/thinking tokens."""
     if provider == "openai":
-        usage = effective_response.get("usage") or {}
-        inp = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
-        out = usage.get("output_tokens") or usage.get("completion_tokens") or 0
-        total = usage.get("total_tokens") or (inp + out)
-        return inp, out, total
-    # Gemini
-    meta = effective_response.get("usageMetadata") or effective_response.get("usage_metadata") or {}
-    inp = meta.get("promptTokenCount") or 0
-    out = meta.get("candidatesTokenCount") or 0
-    total = meta.get("totalTokenCount") or (inp + out)
-    return inp, out, total
+        u = effective.get("usage") or {}
+        inp = u.get("input_tokens") or u.get("prompt_tokens") or 0
+        out = u.get("output_tokens") or u.get("completion_tokens") or 0
+        return inp, out, u.get("total_tokens") or (inp + out)
+
+    if provider == "claude":
+        u = effective.get("usage") or {}
+        inp = u.get("input_tokens") or 0
+        out = u.get("output_tokens") or 0
+        return inp, out, u.get("total_tokens") or (inp + out)
+
+    # Gemini — thinking tokens are tracked separately, billed as output
+    m = effective.get("usageMetadata") or effective.get("usage_metadata") or {}
+    inp = m.get("promptTokenCount") or 0
+    thoughts = m.get("thoughtsTokenCount") or m.get("thoughts_token_count") or 0
+    out = (m.get("candidatesTokenCount") or 0) + thoughts
+    return inp, out, m.get("totalTokenCount") or (inp + out)
 
 
-def _load_pricing() -> Dict[str, Dict[str, float]]:
-    """Load config/models.yaml pricing section: model -> {input: $/1M, output: $/1M}."""
-    path = os.path.join(ROOT, "config", "models.yaml")
-    if not os.path.isfile(path):
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    return data.get("pricing") or {}
-
-
-def _compute_cost_breakdown(
-    model: str,
-    input_tokens: int,
-    output_tokens: int,
-    pricing: Dict[str, Dict[str, float]],
-) -> Optional[Dict[str, float]]:
-    """Cost breakdown in USD from pricing per 1M tokens. Returns None if model not in pricing."""
-    p = pricing.get(model)
-    if not p and model:
-        # e.g. gpt-5-mini-2025-08-07 -> gpt-5-mini
-        base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model)
-        p = pricing.get(base)
-    if not p:
-        return None
-    inp_price = float(p.get("input") or 0)
-    out_price = float(p.get("output") or 0)
-    input_cost = (input_tokens * inp_price) / 1e6
-    output_cost = (output_tokens * out_price) / 1e6
-    total_cost = input_cost + output_cost
-    return {
-        "input_cost": input_cost,
-        "output_cost": output_cost,
-        "total_cost": total_cost,
-    }
-
-
-def ingest_results(
-    jsonl_path: str,
-    model: str,
-    provider: str,
-    ground_truth_csv: Optional[str] = "input/dataset.csv",
-    langfuse_dataset_name: Optional[str] = None,
-) -> None:
-    """
-    Ingest a single batch's results into Langfuse (SDK v3).
-
-    Creates a root span (trace) per result, a generation child, and an accuracy score on the trace.
-    """
-    if not os.path.isfile(jsonl_path):
-        raise FileNotFoundError(f"Results file not found: {jsonl_path}")
-
-    lf = get_client()
-    if langfuse_dataset_name is not None:
-        name = langfuse_dataset_name or os.getenv("LANGFUSE_DATASET_NAME") or DEFAULT_LANGFUSE_DATASET
-        ground_truth, dataset_inputs = _load_from_langfuse(name)
-    else:
-        ground_truth = get_ground_truth(ground_truth_csv=ground_truth_csv, langfuse_dataset_name=None)
-        dataset_inputs = {}
-
-    pricing = _load_pricing()
-    with open(jsonl_path, "r", encoding="utf-8") as f:
-        lines = [json.loads(line) for line in f]
-
-    print(f"[ingest] Ingesting {len(lines)} results for {provider}/{model} from {jsonl_path}")
-
-    for item in lines:
-        custom_id = item.get("custom_id") or item.get("key")
-        cid_str = str(custom_id) if custom_id is not None else ""
-        response = item.get("response", {})
-        body = item.get("body", {})
-        effective = _get_effective_response(response, provider)
-
-        # created_at: OpenAI batch has body.completed_at or body.created_at
+def _extract_prediction(response: Dict, provider: str) -> bool:
+    """Extract boolean campaign_relevant from the provider-specific response."""
+    try:
         if provider == "openai":
-            ts = effective.get("completed_at") or effective.get("created_at") or response.get("created")
-            created_at = datetime.fromtimestamp(ts) if ts is not None else datetime.utcnow()
-        else:
-            created_at = datetime.utcnow()
+            return bool(json.loads(_extract_openai_text(response) or "{}").get("campaign_relevant", False))
 
-        predicted = _extract_prediction(effective, provider)
-        expected = ground_truth.get(cid_str)
-        correct = expected is not None and (predicted == expected)
+        if provider == "claude":
+            for block in response.get("content") or []:
+                if block.get("type") == "text" and isinstance(block.get("text"), str):
+                    return bool(json.loads(block["text"]).get("campaign_relevant", False))
+            return False
 
-        prompt_tokens, completion_tokens, total_tokens = _normalize_usage(effective, provider)
-        cost_breakdown = _compute_cost_breakdown(model, prompt_tokens, completion_tokens, pricing)
-
-        trace_input = dataset_inputs.get(cid_str) or body.get("input")
-        trace_meta = {
-            "model": model,
-            "provider": provider,
-            "custom_id": custom_id,
-            "batch_eval": True,
-        }
-
-        usage_details = {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": total_tokens,
-        }
-        gen_kw: Dict[str, Any] = {
-            "model": model,
-            "input": trace_input,
-            "output": response,
-            "usage_details": usage_details,
-            "completion_start_time": created_at,
-        }
-        if cost_breakdown is not None:
-            gen_kw["cost_details"] = cost_breakdown
-
-        with lf.start_as_current_observation(
-            as_type="span",
-            name=f"batch_eval_{model}",
-            input=trace_input,
-            output={"campaign_relevant": predicted},
-            metadata=trace_meta,
-        ) as root_span:
-            root_span.update_trace(
-                input=trace_input,
-                output={"campaign_relevant": predicted},
-                metadata=trace_meta,
-                tags=["batch_evaluation", f"model:{model}"],
-            )
-
-            with lf.start_as_current_observation(
-                as_type="generation",
-                name=f"{model}_generation",
-                **gen_kw,
-            ):
-                pass
-
-            if expected is not None:
-                root_span.score_trace(
-                    name="accuracy",
-                    value=1.0 if correct else 0.0,
-                    data_type="NUMERIC",
-                    comment=f"expected={expected}, predicted={predicted}",
-                )
-
-            # Make cost easy to chart in Langfuse Scores (in addition to generation.cost_details).
-            if cost_breakdown is not None:
-                root_span.score_trace(
-                    name="cost_usd",
-                    value=cost_breakdown["total_cost"],
-                    data_type="NUMERIC",
-                    comment=(
-                        f"input_cost={cost_breakdown['input_cost']:.8f}, "
-                        f"output_cost={cost_breakdown['output_cost']:.8f}"
-                    ),
-                )
-
-    lf.flush()
-    print(f"[ingest] Done for {provider}/{model}")
+        # Gemini
+        parts = ((response.get("candidates") or [{}])[0].get("content", {}).get("parts") or [])
+        text = parts[0].get("text", "") if parts else ""
+        parsed = json.loads(text) if isinstance(text, str) else text
+        return bool(parsed.get("campaign_relevant", False))
+    except Exception:
+        return False
 
 
 def _extract_openai_text(body: Dict) -> Optional[str]:
-    """Get assistant text from OpenAI Responses API body (output array or legacy .text)."""
-    # Prefer output[] (actual response); body.text is often the request schema in batch responses
     for out in body.get("output") or []:
         if out.get("type") != "message":
             continue
@@ -269,33 +130,110 @@ def _extract_openai_text(body: Dict) -> Optional[str]:
     return None
 
 
-def _extract_prediction(response: Dict, provider: str) -> bool:
-    """Extract boolean campaign_relevant from provider response."""
-    if provider == "openai":
-        text = _extract_openai_text(response)
-        if not text:
-            return False
-        try:
-            return bool(json.loads(text).get("campaign_relevant", False))
-        except Exception:
-            return False
+# ── Pricing ──────────────────────────────────────────────────────────────────
 
-    try:
-        candidates = response.get("candidates") or []
-        if not candidates:
-            return False
-        content = candidates[0].get("content", {})
-        parts = content.get("parts") or []
-        if not parts:
-            return False
-        text = parts[0].get("text", "")
-        if isinstance(text, str):
-            parsed = json.loads(text)
+def _load_pricing() -> Dict[str, Dict[str, float]]:
+    path = os.path.join(ROOT, "config", "models.yaml")
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return (yaml.safe_load(f) or {}).get("pricing") or {}
+
+
+def _compute_cost(model: str, input_tokens: int, output_tokens: int, pricing: Dict) -> Optional[Dict[str, float]]:
+    """Cost breakdown in USD. Returns None if model not in pricing."""
+    p = pricing.get(model)
+    if not p and model:
+        p = pricing.get(re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model))
+    if not p:
+        return None
+    input_cost = (input_tokens * float(p.get("input") or 0)) / 1e6
+    output_cost = (output_tokens * float(p.get("output") or 0)) / 1e6
+    return {"input_cost": input_cost, "output_cost": output_cost, "total_cost": input_cost + output_cost}
+
+
+# ── Main ingestion ───────────────────────────────────────────────────────────
+
+def ingest_results(
+    jsonl_path: str,
+    model: str,
+    provider: str,
+    ground_truth_csv: Optional[str] = "input/dataset.csv",
+    langfuse_dataset_name: Optional[str] = None,
+    run_id: Optional[str] = None,
+) -> None:
+    if not os.path.isfile(jsonl_path):
+        raise FileNotFoundError(f"Results file not found: {jsonl_path}")
+
+    lf = get_client()
+
+    if langfuse_dataset_name is not None:
+        name = langfuse_dataset_name or os.getenv("LANGFUSE_DATASET_NAME") or DEFAULT_LANGFUSE_DATASET
+        ground_truth, dataset_inputs = _load_from_langfuse(name)
+    else:
+        ground_truth = get_ground_truth(ground_truth_csv=ground_truth_csv)
+        dataset_inputs = {}
+
+    pricing = _load_pricing()
+    with open(jsonl_path, "r", encoding="utf-8") as f:
+        lines = [json.loads(line) for line in f]
+
+    print(f"[ingest] Ingesting {len(lines)} results for {provider}/{model}")
+
+    for item in lines:
+        custom_id = item.get("custom_id") or item.get("key")
+        cid = str(custom_id) if custom_id is not None else ""
+        response = item.get("response", {})
+        effective = _get_effective_response(response, provider)
+
+        if provider == "openai":
+            ts = effective.get("completed_at") or effective.get("created_at") or response.get("created")
+            created_at = datetime.fromtimestamp(ts) if ts is not None else datetime.utcnow()
         else:
-            parsed = text
-        return bool(parsed.get("campaign_relevant", False))
-    except Exception:
-        return False
+            created_at = datetime.utcnow()
+
+        predicted = _extract_prediction(effective, provider)
+        expected = ground_truth.get(cid)
+        correct = expected is not None and (predicted == expected)
+
+        inp_tok, out_tok, total_tok = _normalize_usage(effective, provider)
+        cost = _compute_cost(model, inp_tok, out_tok, pricing)
+
+        trace_input = dataset_inputs.get(cid) or item.get("body", {}).get("input")
+        trace_meta = {"model": model, "provider": provider, "custom_id": custom_id, "batch_eval": True}
+        if run_id:
+            trace_meta["run_id"] = run_id
+
+        gen_kw: Dict[str, Any] = {
+            "model": model, "input": trace_input, "output": response,
+            "usage_details": {"prompt_tokens": inp_tok, "completion_tokens": out_tok, "total_tokens": total_tok},
+            "completion_start_time": created_at,
+        }
+        if cost:
+            gen_kw["cost_details"] = cost
+
+        tags = ["batch_evaluation", f"model:{model}"] + ([f"run:{run_id}"] if run_id else [])
+
+        with lf.start_as_current_observation(
+            as_type="span", name=f"batch_eval_{model}",
+            input=trace_input, output={"campaign_relevant": predicted}, metadata=trace_meta,
+        ) as span:
+            span.update_trace(
+                input=trace_input, output={"campaign_relevant": predicted},
+                metadata=trace_meta, tags=tags,
+            )
+            with lf.start_as_current_observation(as_type="generation", name=f"{model}_generation", **gen_kw):
+                pass
+
+            if expected is not None:
+                span.score_trace(name="accuracy", value=1.0 if correct else 0.0,
+                                 data_type="NUMERIC", comment=f"expected={expected}, predicted={predicted}")
+            if cost:
+                span.score_trace(name="cost_usd", value=cost["total_cost"], data_type="NUMERIC",
+                                 comment=f"input_cost={cost['input_cost']:.8f}, output_cost={cost['output_cost']:.8f}")
+
+    lf.flush()
+    print(f"[ingest] Done for {provider}/{model}")
 
 
 if __name__ == "__main__":
@@ -304,15 +242,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Ingest batch results JSONL into Langfuse")
     p.add_argument("jsonl_path")
     p.add_argument("--model", required=True)
-    p.add_argument("--provider", required=True, choices=["openai", "gemini"])
-    p.add_argument("--csv", default=None, help="Ground truth CSV; if omitted and no --langfuse-dataset, use input/dataset.csv")
-    p.add_argument("--langfuse-dataset", default=None, dest="langfuse_dataset_name", help="Ground truth from Langfuse dataset (default from env)")
+    p.add_argument("--provider", required=True, choices=["openai", "gemini", "claude"])
+    p.add_argument("--csv", default=None)
+    p.add_argument("--langfuse-dataset", default=None, dest="langfuse_dataset_name")
     args = p.parse_args()
 
-    ingest_results(
-        args.jsonl_path,
-        args.model,
-        args.provider,
-        ground_truth_csv=args.csv,
-        langfuse_dataset_name=args.langfuse_dataset_name,
-    )
+    ingest_results(args.jsonl_path, args.model, args.provider,
+                   ground_truth_csv=args.csv, langfuse_dataset_name=args.langfuse_dataset_name)
