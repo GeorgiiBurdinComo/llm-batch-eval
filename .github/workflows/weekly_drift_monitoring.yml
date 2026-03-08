@@ -1,14 +1,13 @@
-# Weekly drift monitoring: sample subset, submit batches, then poll + ingest + optional report
-name: Weekly drift monitoring
+# Weekly drift monitoring — split into Saturday submit + Sunday retrieve
+name: "Weekly: submit batches"
 
 on:
   schedule:
-    - cron: "0 2 * * 1"  # Monday 02:00 UTC
+    - cron: "0 19 * * 0"  # Sunday 20:00 Berlin (19:00 UTC)
   workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.11"
-  RUN_ID: gha-${{ github.run_id }}
 
 jobs:
   submit:
@@ -18,6 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Sample subset and submit batches
@@ -25,49 +25,18 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          RUN_ID: gha-${{ github.run_id }}
         run: |
           python scripts/run_eval.py --subset-size 300 --batch-ids data/batch_ids.json --run-id "$RUN_ID"
+      - name: Cache batch IDs for retrieve workflow
+        uses: actions/cache/save@v4
+        with:
+          path: data/batch_ids.json
+          key: weekly-batch-ids-${{ github.run_id }}
       - name: Upload batch IDs
         uses: actions/upload-artifact@v4
         with:
           name: batch_ids
           path: data/batch_ids.json
-
-  poll_and_ingest:
-    needs: submit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - uses: actions/download-artifact@v4
-        with:
-          name: batch_ids
-          path: data/
-      - name: Poll, download, ingest
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-        run: |
-          python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --interval 600 --max-wait 172800 --run-id "$RUN_ID"
-      - name: Generate report
-        run: |
-          python scripts/report.py --results-dir data/results --csv input/dataset.csv --report-dir reports --run-id "$RUN_ID" --timestamped --history reports/accuracy_history.csv
-      - name: Upload results artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: results
-          path: data/results/
-      - name: Upload reports artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: reports
-          path: reports/

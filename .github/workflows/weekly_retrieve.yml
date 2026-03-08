@@ -1,0 +1,65 @@
+# Weekly drift monitoring — retrieve results submitted Sunday evening
+name: "Weekly: retrieve & ingest"
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"  # Monday 09:00 Berlin (08:00 UTC)
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  retrieve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Restore batch IDs from submit workflow
+        uses: actions/cache/restore@v4
+        with:
+          path: data/batch_ids.json
+          key: weekly-batch-ids-
+          restore-keys: weekly-batch-ids-
+      - name: Verify batch IDs exist
+        run: |
+          if [ ! -f data/batch_ids.json ]; then
+            echo "::error::No batch_ids.json found — was the submit workflow run?"
+            exit 1
+          fi
+          cat data/batch_ids.json
+      - name: Poll, download, ingest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          RUN_ID: gha-${{ github.run_id }}
+        run: |
+          python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --interval 60 --max-wait 3600 --run-id "$RUN_ID"
+      - name: Generate report
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          RUN_ID: gha-${{ github.run_id }}
+        run: |
+          python scripts/report.py --results-dir data/results --langfuse-dataset --report-dir reports --run-id "$RUN_ID" --timestamped --history reports/accuracy_history.csv
+      - name: Upload results artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results
+          path: data/results/
+      - name: Upload reports artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: reports/
