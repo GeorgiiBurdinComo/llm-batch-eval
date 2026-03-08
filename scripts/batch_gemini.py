@@ -238,15 +238,18 @@ def cancel_gemini_batch(batch_id: str) -> Dict:
 
 
 def download_gemini_batch_results(batch_id: str, output_path: str) -> None:
-    status = get_gemini_batch_status(batch_id)
-    if status["status"] != "completed":
-        raise RuntimeError(f"Batch {batch_id} not completed (status={status['status']}, raw={status.get('raw_state')})")
-
-    file_id = status["output_file_id"]
+    client = _genai_client()
+    job = client.batches.get(name=batch_id)
+    state = getattr(job.state, "name", str(job.state))
+    status = _STATE_MAP.get(state, "in_progress")
+    if status != "completed":
+        raise RuntimeError(f"Batch {batch_id} not completed (status={status}, raw={state})")
+    dest = getattr(job, "dest", None)
+    file_id = getattr(dest, "file_name", None) if dest else None
     if not file_id:
         raise RuntimeError(f"No output file for batch {batch_id}")
 
-    content = _genai_client().files.download(file=file_id)
+    content = client.files.download(file=file_id)
     if hasattr(content, "read"):
         data = content.read()
     elif isinstance(content, bytes):
