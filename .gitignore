@@ -9,4 +9,5 @@ data/results/
 batches/
 reports/
 data/
+.idea/
 *.jsonl
