@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-DEFAULT_LANGFUSE_DATASET = "campaign_relevance_02e1a68ccb0f"
+DEFAULT_LANGFUSE_DATASET = "campaign_relevance_disagree_subset_9d488308aa46"
 DEFAULT_TEMPLATE_JSON = os.path.join(ROOT, "config", "request_template.json")
 DEFAULT_TEMPLATE_CSV = os.path.join(ROOT, "input", "dataset.csv")
 
