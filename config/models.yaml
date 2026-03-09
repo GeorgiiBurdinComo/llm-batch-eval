@@ -71,3 +71,4 @@ pricing:
   claude-sonnet-4-5: {input: 1.78, output: 8.92}
   claude-sonnet-4:   {input: 1.78, output: 8.92}
   claude-haiku-4-5:  {input: 0.59, output: 2.97}
+  claude-3-5-haiku:  {input: 0.40, output: 2.00}
