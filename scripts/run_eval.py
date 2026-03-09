@@ -1,4 +1,4 @@
-"""Orchestrator: sample subset, submit batches for selected models, write batch_ids."""
+"""Orchestrator: load eval subset from Langfuse, submit batches for selected models, write batch_ids."""
 
 import json
 import os
@@ -19,7 +19,7 @@ for _d in (_scripts_dir, _lib_dir):
         sys.path.insert(0, _d)
 
 import yaml
-from sample import sample_subset
+from load_dataset import load_dataset_rows
 import batch_openai
 import batch_gemini
 import batch_claude
@@ -32,12 +32,10 @@ def load_models_config(config_path: str = None) -> dict:
 
 
 def run_submit(
-    subset_size: int = 300,
     models: list = None,
-    csv_path: str = None,
     langfuse_dataset_name: str = None,
+    csv_path: str = None,
     body_template_path: str = None,
-    baseline_path: str = "data/baseline_predictions.json",
     batches_dir: str = "batches",
     batch_ids_path: str = "data/batch_ids.json",
     run_id: str = None,
@@ -64,13 +62,15 @@ def run_submit(
         "claude": lambda m, s: batch_claude.create_claude_batch(m, s, output_dir=batches_dir),
     }
 
-    subset = sample_subset(
-        subset_size, csv_path=csv_path, langfuse_dataset_name=langfuse_dataset_name,
+    subset = load_dataset_rows(
+        csv_path=csv_path,
+        langfuse_dataset_name=langfuse_dataset_name,
         body_template_path=body_template_path,
-        baseline_path=baseline_path if os.path.isfile(baseline_path) else None,
     )
     if not subset:
-        raise RuntimeError("Empty subset; check dataset source")
+        raise RuntimeError("Empty dataset; check dataset source")
+
+    print(f"[run_eval] Loaded {len(subset)} examples from dataset")
 
     os.makedirs(os.path.dirname(batch_ids_path) or ".", exist_ok=True)
 
@@ -100,20 +100,18 @@ if __name__ == "__main__":
     import argparse
 
     p = argparse.ArgumentParser()
-    p.add_argument("--subset-size", type=int, default=300)
     p.add_argument("--models", type=str)
     p.add_argument("--csv", default=None)
-    p.add_argument("--langfuse-dataset", default=None, dest="langfuse_dataset_name")
+    p.add_argument("--langfuse-dataset", default=None, dest="langfuse_dataset_name",
+                    help="Langfuse dataset name containing the eval subset")
     p.add_argument("--body-template", default=None, dest="body_template_path")
-    p.add_argument("--baseline", default="data/baseline_predictions.json")
     p.add_argument("--batch-ids", default="data/batch_ids.json")
     p.add_argument("--run-id", default=None)
     args = p.parse_args()
 
     run_submit(
-        subset_size=args.subset_size,
         models=[m.strip() for m in args.models.split(",")] if args.models else None,
         csv_path=args.csv, langfuse_dataset_name=args.langfuse_dataset_name,
-        body_template_path=args.body_template_path, baseline_path=args.baseline,
+        body_template_path=args.body_template_path,
         batch_ids_path=args.batch_ids, run_id=args.run_id,
     )

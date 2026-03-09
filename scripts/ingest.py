@@ -226,11 +226,37 @@ def ingest_results(
                 pass
 
             if expected is not None:
-                span.score_trace(name="accuracy", value=1.0 if correct else 0.0,
-                                 data_type="NUMERIC", comment=f"expected={expected}, predicted={predicted}")
+                span.score_trace(
+                    name="accuracy",
+                    value=1.0 if correct else 0.0,
+                    data_type="NUMERIC",
+                    comment=f"expected={expected}, predicted={predicted}",
+                )
+
+                # Confusion matrix label: TP / FP / TN / FN
+                if expected is True and predicted is True:
+                    confusion_label = "true_positive"
+                elif expected is True and predicted is False:
+                    confusion_label = "false_negative"
+                elif expected is False and predicted is False:
+                    confusion_label = "true_negative"
+                else:
+                    confusion_label = "false_positive"
+
+                span.score_trace(
+                    name="error_type",
+                    value=confusion_label,
+                    data_type="CATEGORICAL",
+                    comment=f"expected={expected}, predicted={predicted}",
+                )
+
             if cost:
-                span.score_trace(name="cost_usd", value=cost["total_cost"], data_type="NUMERIC",
-                                 comment=f"input_cost={cost['input_cost']:.8f}, output_cost={cost['output_cost']:.8f}")
+                span.score_trace(
+                    name="cost_usd",
+                    value=cost["total_cost"],
+                    data_type="NUMERIC",
+                    comment=f"input_cost={cost['input_cost']:.8f}, output_cost={cost['output_cost']:.8f}",
+                )
 
     lf.flush()
     print(f"[ingest] Done for {provider}/{model}")

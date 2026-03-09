@@ -1,6 +1,6 @@
 # Model drift & quality monitoring
 
-Batch-based evaluation (OpenAI + Gemini Batch APIs), disagreement-weighted subset sampling, Langfuse ingestion, and GitHub Actions for weekly/manual runs.
+Batch-based evaluation (OpenAI + Gemini + Claude Batch APIs), fixed eval subset from Langfuse, Langfuse ingestion, and GitHub Actions for weekly/manual runs.
 
 ## API keys and secrets
 
@@ -17,19 +17,20 @@ Set these in your environment (or in a `.env` file at project root; see table be
 
 **Do not commit keys.** Use `.env` at project root (in `.gitignore`). For CI, use GitHub Actions secrets only.
 
-**Scripts layout:** Entrypoints you run live in `scripts/` (e.g. `run_eval.py`, `poll_and_ingest.py`, `ingest.py`, `report.py`, `sync_dataset.py`, `batch_openai.py`, `batch_gemini.py`, `sample.py`). Helpers used only by other scripts are in `scripts/lib/` (`load_dataset`, `image_cache`, `upload_gemini_images`); you don’t need to run those directly.
+**Scripts layout:** Entrypoints you run live in `scripts/` (e.g. `run_eval.py`, `poll_and_ingest.py`, `ingest.py`, `report.py`, `sync_dataset.py`, `batch_openai.py`, `batch_gemini.py`). Helpers used only by other scripts are in `scripts/lib/` (`load_dataset`, `image_cache`, `upload_gemini_images`); you don't need to run those directly.
 
 ### Dataset source (default: Langfuse)
 
-- **Default**: Examples and ground truth are loaded from the Langfuse dataset `campaign_relevance_02e1a68ccb0f`. Override the dataset name with env `LANGFUSE_DATASET_NAME`.
-- **Override with local CSV**: Pass `--csv input/dataset.csv` to `run_eval`, `sample`, `poll_and_ingest`, `report`, or `upload_gemini_images` to use the local CSV instead.
-- **Uploading to Langfuse** is a separate step: run `python scripts/sync_dataset.py --csv input/dataset.csv --name campaign_relevance` to push your CSV to a Langfuse dataset. When using the Langfuse source, the request body shape (e.g. `text`, `store`, `model`) is taken from the first row of `input/dataset.csv` as a template; that file must exist even when data comes from Langfuse.
+- **Default**: The eval subset is loaded from a Langfuse dataset. Override the dataset name with `--langfuse-dataset` or env `LANGFUSE_DATASET_NAME`.
+- **Creating the eval subset**: Create a Langfuse dataset manually with your chosen examples (e.g. disagreement-based selection). `run_eval.py` will use all items from that dataset.
+- **Override with local CSV**: Pass `--csv input/dataset.csv` to `run_eval`, `poll_and_ingest`, `report`, or `upload_gemini_images` to use the local CSV instead.
+- **Uploading full dataset to Langfuse**: run `python scripts/sync_dataset.py --csv input/dataset.csv --name campaign_relevance` to push your CSV to a Langfuse dataset.
 
 ---
 
-## Step-by-step: run with 5 examples and see the dashboard
+## Step-by-step
 
-From **project root**. Use a subset of **5** for a fast end-to-end run.
+From **project root**.
 
 ### 1. Install and env
 
@@ -38,14 +39,14 @@ pip install -r requirements.txt
 # Create .env with OPENAI_API_KEY, GOOGLE_API_KEY, ANTHROPIC_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 ```
 
-### 2. Submit batches (subset of 5)
+### 2. Submit batches
 
 ```bash
-python scripts/run_eval.py --subset-size 5
+python scripts/run_eval.py --langfuse-dataset eval_subset
 ```
 
-- Samples 5 examples, creates batch jobs for all models in `config/models.yaml`.
-- For Gemini: uploads dataset images to Gemini Files API (or uses cache in `data/gemini_image_cache.json`) then submits batch.
+- Loads all examples from the `eval_subset` Langfuse dataset.
+- Creates batch jobs for all models in `config/models.yaml`.
 - Writes `data/batch_ids.json`.
 
 ### 3. Wait for batches, then poll, download, and ingest
@@ -56,7 +57,7 @@ Batches usually finish within few hours. Then:
 python scripts/poll_and_ingest.py
 ```
 
-- Polls every 5 min, downloads results to `data/results/`, ingests traces and accuracy scores into Langfuse, updates `data/baseline_predictions.json`.
+- Polls every 5 min, downloads results to `data/results/`, ingests traces and accuracy scores into Langfuse.
 
 ### 4. View traces and dashboard
 
@@ -68,11 +69,11 @@ Details: [docs/DASHBOARDS.md](docs/DASHBOARDS.md).
 
 ---
 
-## Quick start (larger subset)
+## Quick start
 
 ```bash
 pip install -r requirements.txt
-python scripts/run_eval.py --subset-size 300
+python scripts/run_eval.py --langfuse-dataset eval_subset
 # After batches complete:
 python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json
 ```

@@ -20,7 +20,7 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Sample subset and submit batches
+      - name: Submit batches from Langfuse eval subset
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
@@ -29,7 +29,7 @@ jobs:
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           RUN_ID: gha-${{ github.run_id }}
         run: |
-          python scripts/run_eval.py --subset-size 300 --batch-ids data/batch_ids.json --run-id "$RUN_ID"
+          python scripts/run_eval.py --batch-ids data/batch_ids.json --run-id "$RUN_ID"
       - name: Cache batch IDs for retrieve workflow
         uses: actions/cache/save@v4
         with:

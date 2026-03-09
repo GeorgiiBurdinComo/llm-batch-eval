@@ -15,7 +15,6 @@ import batch_openai
 import batch_gemini
 import batch_claude
 from ingest import ingest_results
-from sample import aggregate_baseline
 
 _STATUS_FN = {
     "openai": batch_openai.get_openai_batch_status,
@@ -81,8 +80,6 @@ def poll_until_done(
             ingest_results(out_path, b["model"], b["provider"],
                            ground_truth_csv=ground_truth_csv,
                            langfuse_dataset_name=langfuse_dataset_name, run_id=run_id)
-
-    aggregate_baseline(results_dir, "data/baseline_predictions.json")
 
 
 if __name__ == "__main__":
