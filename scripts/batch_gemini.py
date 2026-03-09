@@ -138,7 +138,7 @@ def create_gemini_batch(
     max_output_tokens: int = 4096,
 ) -> str:
     """Create a Gemini batch job. Returns batch name/ID."""
-    from image_cache import load_image_cache
+    from lib.image_cache import load_image_cache
 
     cache_path = image_cache_path or DEFAULT_IMAGE_CACHE_PATH
     image_urls = _collect_image_urls(examples)
