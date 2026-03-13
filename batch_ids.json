@@ -1,0 +1,71 @@
+{
+  "run_id": "20260225-182653Z",
+  "subset_size": 300,
+  "batches": [
+    {
+      "model": "gpt-5.2",
+      "provider": "openai",
+      "batch_id": "batch_699f4314e5588190a80c5bcfc6e3d5ba"
+    },
+    {
+      "model": "gpt-5.1",
+      "provider": "openai",
+      "batch_id": "batch_699f4317e5c8819088fd342ba6985304"
+    },
+    {
+      "model": "gpt-5",
+      "provider": "openai",
+      "batch_id": "batch_699f431b197881909cc76d26cb933aed"
+    },
+    {
+      "model": "gpt-5-mini",
+      "provider": "openai",
+      "batch_id": "batch_699f431ea23881908c04db82d10cb9a9"
+    },
+    {
+      "model": "gpt-5-nano",
+      "provider": "openai",
+      "batch_id": "batch_699f432144588190b3bcd9b1fe2a6f7e"
+    },
+    {
+      "model": "gpt-4.1",
+      "provider": "openai",
+      "batch_id": "batch_699f4323abec819097ef502c57f3c424"
+    },
+    {
+      "model": "gpt-4.1-mini",
+      "provider": "openai",
+      "batch_id": "batch_699f4326040081908d9e01aa93667b97"
+    },
+    {
+      "model": "gpt-4.1-nano",
+      "provider": "openai",
+      "batch_id": "batch_699f4328f5b8819086964d3bb6dc1a17"
+    },
+    {
+      "model": "gpt-4o",
+      "provider": "openai",
+      "batch_id": "batch_699f432bb47c81909de9fa580423e150"
+    },
+    {
+      "model": "gemini-3-flash-preview",
+      "provider": "gemini",
+      "batch_id": "batches/jkv949vhc5y3yegnboah5z4phipkl19062ls"
+    },
+    {
+      "model": "gemini-2.5-flash",
+      "provider": "gemini",
+      "batch_id": "batches/nf9cvhb3lj3dqip9c80dbk9bzo79wptqorpb"
+    },
+    {
+      "model": "gemini-2.5-pro",
+      "provider": "gemini",
+      "batch_id": "batches/e05t2718zggwyc41md7ndszedyr63lomlt6x"
+    },
+    {
+      "model": "gemini-2.0-flash",
+      "provider": "gemini",
+      "batch_id": "batches/qgthj1agveh7n3dn7ihr7i5swcsx1ef5dffz"
+    }
+  ]
+}
