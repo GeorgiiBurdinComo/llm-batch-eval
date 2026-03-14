@@ -46,25 +46,6 @@ jobs:
           RUN_ID: gha-${{ github.run_id }}
         run: |
           python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --interval 60 --max-wait 3600 --run-id "$RUN_ID"
-      - name: Generate report
-        env:
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          RUN_ID: gha-${{ github.run_id }}
-        run: |
-          python scripts/report.py --results-dir data/results --langfuse-dataset --report-dir reports --run-id "$RUN_ID" --timestamped --history reports/accuracy_history.csv
-      - name: Upload results artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: results
-          path: data/results/
-      - name: Upload reports artifact
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: reports
-          path: reports/
       - name: Export Langfuse CSV to streamlit_app
         env:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
