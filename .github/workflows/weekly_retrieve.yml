@@ -3,7 +3,7 @@ name: "Weekly: retrieve & ingest"
 
 on:
   schedule:
-    - cron: "0 8 * * 1"  # Monday 09:00 Berlin (08:00 UTC)
+    - cron: "0 8 * * 0"  # Sunday 09:00 Berlin (08:00 UTC)
   workflow_dispatch:
 
 env:
