@@ -51,6 +51,11 @@ def _build_session() -> requests.Session:
 SESSION = _build_session()
 
 
+# Retries for transient connection/stream errors (e.g. ChunkedEncodingError in CI)
+_FETCH_MAX_ATTEMPTS = 4
+_FETCH_BACKOFF_BASE = 5
+
+
 def _fetch_paginated(
     url: str,
     auth: HTTPBasicAuth,
@@ -67,18 +72,35 @@ def _fetch_paginated(
         params = {**base_params, "limit": page_limit, "page": page}
         print(f"Fetching {url} page={page} limit={page_limit} ...")
 
-        try:
-            res = SESSION.get(url, auth=auth, params=params, timeout=timeout)
-        except requests.exceptions.ReadTimeout as e:
-            raise RuntimeError(
-                f"Read timeout on {url} page={page} limit={page_limit}. "
-                f"Try lowering page_limit further or increasing read timeout."
-            ) from e
+        last_error = None
+        for attempt in range(1, _FETCH_MAX_ATTEMPTS + 1):
+            try:
+                res = SESSION.get(url, auth=auth, params=params, timeout=timeout)
+                if res.status_code != 200:
+                    raise RuntimeError(f"Request failed ({url}): {res.status_code} {res.text}")
+                # Consume body (can raise ChunkedEncodingError if connection drops mid-stream)
+                payload = res.json()
+                break
+            except (
+                requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                ConnectionError,
+            ) as e:
+                last_error = e
+                if attempt < _FETCH_MAX_ATTEMPTS:
+                    delay = _FETCH_BACKOFF_BASE * (2 ** (attempt - 1))
+                    print(f"  Connection/stream error (attempt {attempt}/{_FETCH_MAX_ATTEMPTS}), retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    raise RuntimeError(
+                        f"Failed after {_FETCH_MAX_ATTEMPTS} attempts on {url} page={page}: {e}"
+                    ) from e
+            except requests.exceptions.ReadTimeout as e:
+                raise RuntimeError(
+                    f"Read timeout on {url} page={page} limit={page_limit}. "
+                    f"Try lowering page_limit further or increasing read timeout."
+                ) from e
 
-        if res.status_code != 200:
-            raise RuntimeError(f"Request failed ({url}): {res.status_code} {res.text}")
-
-        payload = res.json()
         data = payload.get("data") or []
         meta = payload.get("meta") or {}
 
