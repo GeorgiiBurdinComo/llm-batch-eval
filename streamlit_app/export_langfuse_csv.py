@@ -153,6 +153,46 @@ def main() -> None:
     df_traces = pd.json_normalize(traces_raw) if traces_raw else pd.DataFrame()
     df_scores = pd.json_normalize(scores_raw) if scores_raw else pd.DataFrame()
 
+    # Keep only the columns that the Streamlit dashboard actually uses,
+    # to shrink the CSVs without breaking metrics.
+    if not df_traces.empty:
+        trace_cols = [
+            # core identity / timestamp (the app will pick one timestamp column)
+            "id",
+            "timestamp",
+            "createdAt",
+            "created_at",
+            # tags and model-level metadata
+            "tags",
+            "metadata.model",
+            "metadata.custom_id",
+            "metadata.batch_eval",
+            "metadata.run_id",
+        ]
+        existing_trace_cols = [c for c in trace_cols if c in df_traces.columns]
+        df_traces = df_traces[existing_trace_cols]
+
+    if not df_scores.empty:
+        score_cols = [
+            # id + metric identity
+            "id",
+            "score_id",
+            "name",
+            "score_name",
+            "value",
+            "timestamp",
+            # join to traces
+            "traceId",
+            "trace_id",
+            # tag-like columns (batch_evaluation etc.)
+            "tags",
+            "traceTags",
+            "scoreTags",
+            "trace.tags",
+        ]
+        existing_score_cols = [c for c in score_cols if c in df_scores.columns]
+        df_scores = df_scores[existing_score_cols]
+
     df_traces.to_csv(traces_path, index=False)
     df_scores.to_csv(scores_path, index=False)
 

@@ -218,7 +218,7 @@ def ingest_results(
             as_type="span", name=f"batch_eval_{model}",
             input=trace_input, output={"campaign_relevant": predicted}, metadata=trace_meta,
         ) as span:
-            span.update_trace(
+            span.update(
                 input=trace_input, output={"campaign_relevant": predicted},
                 metadata=trace_meta, tags=tags,
             )
