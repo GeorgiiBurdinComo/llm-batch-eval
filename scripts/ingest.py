@@ -34,7 +34,7 @@ def _load_ground_truth_csv(csv_path: str) -> Dict[str, bool]:
 
 def _load_from_langfuse(dataset_name: str) -> Tuple[Dict[str, bool], Dict[str, Any]]:
     """Load ground truth and inputs from a Langfuse dataset in one API call."""
-    dataset = get_client().get_dataset(dataset_name)
+    dataset = Langfuse().get_dataset(dataset_name)
     truth: Dict[str, bool] = {}
     inputs: Dict[str, Any] = {}
     for item in dataset.items:
