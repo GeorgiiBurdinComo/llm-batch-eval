@@ -103,11 +103,11 @@ def load_dataset_rows(
     if csv_path:
         return load_csv_rows(os.path.join(ROOT, csv_path) if not os.path.isabs(csv_path) else csv_path)
 
-    from langfuse import get_client
+    from langfuse import Langfuse
 
     name = langfuse_dataset_name or os.getenv("LANGFUSE_DATASET_NAME") or DEFAULT_LANGFUSE_DATASET
     template = _load_body_template(body_template_path)
-    dataset = get_client().get_dataset(name)
+    dataset = Langfuse().get_dataset(name)
 
     rows = []
     for idx, item in enumerate(dataset.items):

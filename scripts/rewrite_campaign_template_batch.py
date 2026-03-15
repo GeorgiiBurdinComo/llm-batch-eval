@@ -19,7 +19,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from langfuse import get_client  # type: ignore
+from langfuse import Langfuse  # type: ignore
 
 import batch_openai  # type: ignore
 from scripts.lib.load_dataset import _load_body_template  # type: ignore
@@ -83,7 +83,7 @@ def main() -> None:
 
     template = _load_body_template(None)
 
-    client = get_client()
+    client = Langfuse()
     dataset = client.get_dataset(DATASET_NAME)
 
     data_dir = Path(ROOT) / "data"

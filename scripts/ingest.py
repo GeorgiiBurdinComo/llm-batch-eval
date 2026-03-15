@@ -214,49 +214,63 @@ def ingest_results(
 
         tags = ["batch_evaluation", f"model:{model}"] + ([f"run:{run_id}"] if run_id else [])
 
-        with lf.start_as_current_observation(
-            as_type="span", name=f"batch_eval_{model}",
-            input=trace_input, output={"campaign_relevant": predicted}, metadata=trace_meta,
-        ) as span:
-            span.update(
-                input=trace_input, output={"campaign_relevant": predicted},
-                metadata=trace_meta, tags=tags,
+        # Langfuse SDK: trace -> span -> generation; score on span (observation_id)
+        trace = lf.trace(
+            name=f"batch_eval_{model}",
+            input=trace_input,
+            output={"campaign_relevant": predicted},
+            metadata=trace_meta,
+            tags=tags,
+        )
+        span = lf.span(
+            trace_id=trace.id,
+            name=f"batch_eval_{model}",
+            input=trace_input,
+            output={"campaign_relevant": predicted},
+            metadata=trace_meta,
+        )
+        lf.generation(
+            trace_id=trace.id,
+            parent_observation_id=span.id,
+            name=f"{model}_generation",
+            **gen_kw,
+        )
+
+        if expected is not None:
+            lf.score(
+                trace_id=trace.id,
+                observation_id=span.id,
+                name="accuracy",
+                value=1.0 if correct else 0.0,
+                data_type="NUMERIC",
+                comment=f"expected={expected}, predicted={predicted}",
             )
-            with lf.start_as_current_observation(as_type="generation", name=f"{model}_generation", **gen_kw):
-                pass
-
-            if expected is not None:
-                span.score(
-                    name="accuracy",
-                    value=1.0 if correct else 0.0,
-                    data_type="NUMERIC",
-                    comment=f"expected={expected}, predicted={predicted}",
-                )
-
-                # Confusion matrix label: TP / FP / TN / FN
-                if expected is True and predicted is True:
-                    confusion_label = "true_positive"
-                elif expected is True and predicted is False:
-                    confusion_label = "false_negative"
-                elif expected is False and predicted is False:
-                    confusion_label = "true_negative"
-                else:
-                    confusion_label = "false_positive"
-
-                span.score(
-                    name="error_type",
-                    value=confusion_label,
-                    data_type="CATEGORICAL",
-                    comment=f"expected={expected}, predicted={predicted}",
-                )
-
-            if cost:
-                span.score(
-                    name="cost_usd",
-                    value=cost["total_cost"],
-                    data_type="NUMERIC",
-                    comment=f"input_cost={cost['input_cost']:.8f}, output_cost={cost['output_cost']:.8f}",
-                )
+            # Confusion matrix label: TP / FP / TN / FN
+            if expected is True and predicted is True:
+                confusion_label = "true_positive"
+            elif expected is True and predicted is False:
+                confusion_label = "false_negative"
+            elif expected is False and predicted is False:
+                confusion_label = "true_negative"
+            else:
+                confusion_label = "false_positive"
+            lf.score(
+                trace_id=trace.id,
+                observation_id=span.id,
+                name="error_type",
+                value=confusion_label,
+                data_type="CATEGORICAL",
+                comment=f"expected={expected}, predicted={predicted}",
+            )
+        if cost:
+            lf.score(
+                trace_id=trace.id,
+                observation_id=span.id,
+                name="cost_usd",
+                value=cost["total_cost"],
+                data_type="NUMERIC",
+                comment=f"input_cost={cost['input_cost']:.8f}, output_cost={cost['output_cost']:.8f}",
+            )
 
     lf.flush()
     print(f"[ingest] Done for {provider}/{model}")
