@@ -14,7 +14,7 @@ except ImportError:
     pass
 
 import yaml
-from langfuse import get_client
+from langfuse import Langfuse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_LANGFUSE_DATASET = "campaign_relevance_02e1a68ccb0f"
@@ -165,7 +165,7 @@ def ingest_results(
     if not os.path.isfile(jsonl_path):
         raise FileNotFoundError(f"Results file not found: {jsonl_path}")
 
-    lf = get_client()
+    lf = Langfuse()
 
     if langfuse_dataset_name is not None:
         name = langfuse_dataset_name or os.getenv("LANGFUSE_DATASET_NAME") or DEFAULT_LANGFUSE_DATASET
@@ -226,7 +226,7 @@ def ingest_results(
                 pass
 
             if expected is not None:
-                span.score_trace(
+                span.score(
                     name="accuracy",
                     value=1.0 if correct else 0.0,
                     data_type="NUMERIC",
@@ -243,7 +243,7 @@ def ingest_results(
                 else:
                     confusion_label = "false_positive"
 
-                span.score_trace(
+                span.score(
                     name="error_type",
                     value=confusion_label,
                     data_type="CATEGORICAL",
@@ -251,7 +251,7 @@ def ingest_results(
                 )
 
             if cost:
-                span.score_trace(
+                span.score(
                     name="cost_usd",
                     value=cost["total_cost"],
                     data_type="NUMERIC",
