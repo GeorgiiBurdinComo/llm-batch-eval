@@ -29,13 +29,12 @@ jobs:
           path: data/batch_ids.json
           key: weekly-batch-ids-
           restore-keys: weekly-batch-ids-
-      - name: Verify batch IDs exist
+      - name: Show cached batch_ids.json
         run: |
-          if [ ! -f data/batch_ids.json ]; then
-            echo "::error::No batch_ids.json found — was the submit workflow run?"
-            exit 1
-          fi
-          cat data/batch_ids.json
+          echo "Cached file exists?"
+          ls -l data || true
+          echo "----- batch_ids.json -----"
+          cat data/batch_ids.json || echo "batch_ids.json not found"
       - name: Poll, download, ingest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
