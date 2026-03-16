@@ -433,6 +433,11 @@ def fetch_scores(from_ts: pd.Timestamp, to_ts: pd.Timestamp) -> pd.DataFrame:
     )
 
     df = df.dropna(subset=["timestamp"])
+
+    # Drop scores where we could not reliably attribute a model
+    if "model" in df.columns:
+        df = df[df["model"].notna() & (df["model"] != "unknown")]
+
     return df
 
 
