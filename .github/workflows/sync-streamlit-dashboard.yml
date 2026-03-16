@@ -10,6 +10,12 @@ on:
       - "streamlit_app/**"
   workflow_dispatch:
 
+permissions:
+  contents: write  # needed for pushing to this repo
+
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -19,6 +25,28 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Export Langfuse CSV to streamlit_app
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+        run: |
+          pip install requests
+          python streamlit_app/export_langfuse_csv.py
+
+      - name: Commit and push Langfuse CSVs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add streamlit_app/langfuse_traces.csv streamlit_app/langfuse_scores.csv
+          git diff --staged --quiet || git commit -m "chore: update Langfuse CSV export (weekly retrieve)"
+          git push
 
       - name: Checkout target repo
         uses: actions/checkout@v4
@@ -34,8 +62,8 @@ jobs:
             streamlit_app/ target-repo/
 
       - name: Commit and push if changed
+        working-directory: target-repo
         run: |
-          cd target-repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
