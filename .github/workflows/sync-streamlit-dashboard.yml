@@ -37,7 +37,7 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          pip install requests
+          pip install -r requirements.txt
           python streamlit_app/export_langfuse_csv.py
 
       - name: Commit and push Langfuse CSVs
