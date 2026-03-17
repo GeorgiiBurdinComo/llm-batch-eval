@@ -1,4 +1,4 @@
-name: Sync Streamlit dashboard repo
+name: Weekly: sync Streamlit dashboard
 
 on:
   schedule:
