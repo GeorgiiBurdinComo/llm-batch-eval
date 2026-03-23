@@ -6,23 +6,11 @@
 # Last updated: 2026-03-09
 
 openai:
-  - gpt-5.4
-  - gpt-5.2
-  - gpt-5.1
-  - gpt-5
-  - gpt-5-mini
-  - gpt-5-nano
+
   - gpt-4.1-mini
   - gpt-4.1-nano
 
-gemini:
-  - gemini-2.5-flash
 
-
-claude:
-  - claude-sonnet-4-6
-  - claude-sonnet-4-5
-  - claude-haiku-4-5
 
 # Batch API pricing per 1M tokens (USD)
 pricing:
