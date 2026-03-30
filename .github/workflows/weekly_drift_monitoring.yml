@@ -3,7 +3,7 @@ name: "Weekly: submit batches"
 
 on:
   schedule:
-    - cron: "0 15 * * 5"  # Friday 16:00 Berlin (15:00 UTC)
+    - cron: "0 5 * * 5"  # Friday 6:00 Berlin (5:00 UTC)
   workflow_dispatch:
 
 env:

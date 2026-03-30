@@ -2,7 +2,7 @@ name: "Weekly: Sync Monitoring Dashboard"
 
 on:
   schedule:
-    - cron: "0 7 * * 0"   # Sunday 07:00 UTC — 2h after weekly_retrieve (05:00 UTC)
+    - cron: "0 7 * * 1"   # Monday 07:00 UTC — 2h after weekly_retrieve (05:00 UTC)
   push:
     branches:
       - main
