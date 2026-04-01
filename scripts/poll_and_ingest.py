@@ -31,6 +31,7 @@ def poll_until_done(
     run_id: Optional[str] = None,
     poll_interval_sec: int = 300,
     max_wait_sec: int = 86400 * 2,
+    wait_for_all: bool = False,
 ) -> None:
     with open(batch_ids_path) as f:
         data = json.load(f)
@@ -38,10 +39,11 @@ def poll_until_done(
     run_id = run_id or data.get("run_id") or os.getenv("RUN_ID")
     os.makedirs(results_dir, exist_ok=True)
 
+    unresolved = list(batches)
     start = time.time()
-    while time.time() - start < max_wait_sec:
+    while unresolved and (time.time() - start < max_wait_sec):
         pending = []
-        for b in batches:
+        for b in unresolved:
             bid, provider, model = b["batch_id"], b["provider"], b["model"]
             fn = _STATUS_FN.get(provider)
             if not fn:
@@ -63,16 +65,27 @@ def poll_until_done(
                         bid, out_path, input_jsonl_path=inputs if os.path.isfile(inputs) else None,
                     )
             elif st["status"] in ("failed", "cancelled", "expired"):
-                print(f"[poll] {provider}/{model} {st['status']}")
+                # These states are non-retrievable; skip so ingestion can continue.
+                print(f"[poll] Skipping {provider}/{model}: {st['status']} (cannot download results)")
             else:
-                pending.append(f"{provider}/{model}")
+                if wait_for_all:
+                    pending.append(b)
+                else:
+                    # Some providers can remain in progress forever; skip unresolved jobs.
+                    print(f"[poll] Skipping {provider}/{model}: {st['status']} (not ready yet)")
 
+        if not wait_for_all:
+            break
         if not pending:
             break
-        print(f"[poll] Waiting for {len(pending)} batches: {pending[:5]}...")
+        unresolved = pending
+        pending_labels = [f"{b['provider']}/{b['model']}" for b in unresolved]
+        print(f"[poll] Waiting for {len(unresolved)} batches: {pending_labels[:5]}...")
         time.sleep(poll_interval_sec)
     else:
-        print("[poll] Timeout; some batches may still be running")
+        if wait_for_all and unresolved:
+            pending_labels = [f"{b['provider']}/{b['model']}" for b in unresolved]
+            print(f"[poll] Timeout; skipping unresolved batches: {pending_labels[:5]}...")
 
     for b in batches:
         out_path = os.path.join(results_dir, f"{b['provider']}_{b['model']}.jsonl")
@@ -93,6 +106,7 @@ if __name__ == "__main__":
     p.add_argument("--run-id", default=None)
     p.add_argument("--interval", type=int, default=300)
     p.add_argument("--max-wait", type=int, default=86400 * 2)
+    p.add_argument("--wait-for-all", action="store_true", help="Keep polling until all batches are terminal")
     args = p.parse_args()
 
     use_langfuse = args.csv is None
@@ -104,4 +118,5 @@ if __name__ == "__main__":
         run_id=args.run_id,
         poll_interval_sec=args.interval,
         max_wait_sec=args.max_wait,
+        wait_for_all=args.wait_for_all,
     )
