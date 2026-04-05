@@ -4,6 +4,26 @@ Batch-based evaluation across **OpenAI**, **Gemini**, and **Claude** provider Ba
 
 ---
 
+## Quick reference
+
+```bash
+pip install -r requirements.txt
+
+# Optional: push CSV to Langfuse
+python scripts/sync_dataset.py --csv input/dataset.csv --name campaign_relevance
+
+# Submit
+python scripts/run_eval.py --langfuse-dataset YOUR_DATASET --batch-ids data/batch_ids.json --run-id local-001
+
+# After batches complete
+python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --run-id local-001
+
+# Dashboard CSVs
+python streamlit_app/export_langfuse_csv.py
+streamlit run streamlit_app/app.py
+```
+
+---
 ## Repository overview
 
 | Stage | What happens |
@@ -298,23 +318,3 @@ Token usage is normalized per provider (`_normalize_usage`); Gemini may include 
 - **Export empty or short window** — `export_langfuse_csv.py` uses a fixed start timestamp; edit the script to widen the range.
 - **Default Langfuse dataset** — If you forget `--langfuse-dataset`, code falls back to `DEFAULT_LANGFUSE_DATASET` in `load_dataset.py` — confirm that matches your project.
 
----
-
-## Quick reference
-
-```bash
-pip install -r requirements.txt
-
-# Optional: push CSV to Langfuse
-python scripts/sync_dataset.py --csv input/dataset.csv --name campaign_relevance
-
-# Submit
-python scripts/run_eval.py --langfuse-dataset YOUR_DATASET --batch-ids data/batch_ids.json --run-id local-001
-
-# After batches complete
-python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --run-id local-001
-
-# Dashboard CSVs
-python streamlit_app/export_langfuse_csv.py
-streamlit run streamlit_app/app.py
-```
