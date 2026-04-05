@@ -202,6 +202,9 @@ def main() -> None:
             "name",
             "score_name",
             "value",
+            # categorical string value (e.g. error_type labels)
+            "stringValue",
+            "string_value",
             "timestamp",
             # join to traces
             "traceId",

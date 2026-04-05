@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import altair as alt
-import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
@@ -372,11 +371,11 @@ def fetch_scores(from_ts: pd.Timestamp, to_ts: pd.Timestamp) -> pd.DataFrame:
         return pd.DataFrame()
 
     # keep only relevant metrics
+    keep_metrics = {"accuracy", "cost_usd", "error_type"}
     if "name" in scores_df.columns:
-        scores_df = scores_df[scores_df["name"].isin(["accuracy", "cost_usd"])]
+        scores_df = scores_df[scores_df["name"].isin(keep_metrics)]
     else:
-        # Legacy column name
-        scores_df = scores_df[scores_df["score_name"].isin(["accuracy", "cost_usd"])]
+        scores_df = scores_df[scores_df["score_name"].isin(keep_metrics)]
 
     if scores_df.empty:
         return pd.DataFrame()
@@ -421,11 +420,19 @@ def fetch_scores(from_ts: pd.Timestamp, to_ts: pd.Timestamp) -> pd.DataFrame:
     else:
         score_name_col = "score_name"
 
+    # Resolve categorical string value (error_type labels)
+    str_val_col = None
+    for cand in ("stringValue", "string_value", "valueString", "value_string"):
+        if cand in merged.columns:
+            str_val_col = cand
+            break
+
     df = pd.DataFrame(
         {
             "timestamp": ensure_utc_timestamp(merged["timestamp"]),
             "score_name": merged[score_name_col],
             "value": pd.to_numeric(merged["value"], errors="coerce"),
+            "string_value": merged[str_val_col] if str_val_col else pd.Series([None] * len(merged)),
             "model": merged.get("model", "unknown").fillna("unknown"),
             "custom_id": merged.get("custom_id"),
             "run_id": merged.get("run_id"),
@@ -539,39 +546,128 @@ def ensure_utc_timestamp(series: pd.Series) -> pd.Series:
     return dt
 
 
-def build_summary(
-    df_acc: pd.DataFrame,
-    df_cost: pd.DataFrame,
-    *,
-    cost_agg: str = "sum",
-) -> tuple[pd.DataFrame, str]:
-    acc = df_acc.groupby("model")["value"].agg(["mean", "count"]).reset_index()
-    acc.columns = ["model", "Average Accuracy", "Evaluations"]
+METRIC_OPTIONS: list[tuple[str, str]] = [
+    ("accuracy", "Accuracy"),
+    ("precision", "Precision"),
+    ("recall", "Recall"),
+    ("f1", "F1"),
+    ("specificity", "Specificity"),
+    ("balanced_accuracy", "Balanced Accuracy"),
+]
 
-    if cost_agg == "sum":
-        cost = df_cost.groupby("model")["value"].sum().reset_index()
-        cost_col = "Total Cost (USD)"
-    elif cost_agg == "mean":
-        cost = df_cost.groupby("model")["value"].mean().reset_index()
-        cost_col = "Avg Cost per Eval (USD)"
-    else:
-        raise ValueError("cost_agg must be either 'sum' or 'mean'")
-
-    cost.columns = ["model", cost_col]
-
-    summary = acc.merge(cost, on="model", how="left")
-    summary["Input Cost (1M Tokens)"] = summary["model"].map(INPUT_PRICES).fillna("N/A")
-    return summary, cost_col
+_METRIC_LABELS: dict[str, str] = dict(METRIC_OPTIONS)
 
 
-def build_daily_accuracy(df_acc: pd.DataFrame) -> pd.DataFrame:
-    daily = (
-        df_acc.groupby([df_acc["timestamp"].dt.date, "model"])["value"]
-        .mean()
+def metric_from_counts(tp: int, fp: int, tn: int, fn: int, key: str) -> float | None:
+    n = tp + fp + tn + fn
+    if n == 0:
+        return None
+    if key == "accuracy":
+        return (tp + tn) / n
+    if key == "precision":
+        d = tp + fp
+        return tp / d if d > 0 else None
+    if key == "recall":
+        d = tp + fn
+        return tp / d if d > 0 else None
+    if key == "f1":
+        pd_ = tp + fp
+        rd = tp + fn
+        if pd_ == 0 or rd == 0:
+            return None
+        prec, rec = tp / pd_, tp / rd
+        return 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else None
+    if key == "specificity":
+        d = tn + fp
+        return tn / d if d > 0 else None
+    if key == "balanced_accuracy":
+        rd, sd = tp + fn, tn + fp
+        if rd == 0 or sd == 0:
+            return None
+        return 0.5 * (tp / rd + tn / sd)
+    return None
+
+
+def _confusion_counts(
+    df_error_type: pd.DataFrame,
+    groupby_cols: list[str],
+) -> pd.DataFrame:
+    """Pivot error_type string_value into TP/FP/TN/FN columns per group."""
+    label_col = "string_value"
+    if label_col not in df_error_type.columns:
+        df_error_type = df_error_type.copy()
+        df_error_type[label_col] = df_error_type.apply(_resolve_string_value, axis=1)
+
+    valid_labels = ["true_positive", "false_positive", "true_negative", "false_negative"]
+    df_et = df_error_type[df_error_type[label_col].isin(valid_labels)].copy()
+    if df_et.empty:
+        return pd.DataFrame()
+
+    counts = (
+        df_et.groupby(groupby_cols + [label_col])
+        .size()
+        .unstack(fill_value=0)
+        .reindex(columns=valid_labels, fill_value=0)
         .reset_index()
     )
-    daily.columns = ["date", "model", "accuracy"]
-    return daily
+    counts.columns.name = None
+    return counts.rename(columns={
+        "true_positive": "TP",
+        "false_positive": "FP",
+        "true_negative": "TN",
+        "false_negative": "FN",
+    })
+
+
+def build_daily_metric(df_error_type: pd.DataFrame, metric_key: str) -> pd.DataFrame:
+    df = df_error_type.copy()
+    df["date"] = df["timestamp"].dt.date
+    counts = _confusion_counts(df, ["date", "model"])
+    if counts.empty:
+        return pd.DataFrame(columns=["date", "model", "metric_value"])
+
+    counts["metric_value"] = counts.apply(
+        lambda r: metric_from_counts(int(r["TP"]), int(r["FP"]), int(r["TN"]), int(r["FN"]), metric_key),
+        axis=1,
+    )
+    return counts[["date", "model", "metric_value"]].dropna(subset=["metric_value"])
+
+
+def build_metric_summary(
+    df_error_type: pd.DataFrame,
+    df_cost: pd.DataFrame,
+    metric_key: str,
+    *,
+    cost_agg: str = "sum",
+) -> tuple[pd.DataFrame, str, str]:
+    counts = _confusion_counts(df_error_type, ["model"])
+    if counts.empty:
+        return pd.DataFrame(), "", ""
+
+    counts["n"] = counts["TP"] + counts["FP"] + counts["TN"] + counts["FN"]
+    metric_label = _METRIC_LABELS.get(metric_key, metric_key)
+    counts[metric_label] = counts.apply(
+        lambda r: metric_from_counts(int(r["TP"]), int(r["FP"]), int(r["TN"]), int(r["FN"]), metric_key),
+        axis=1,
+    )
+    counts["Evaluations"] = counts["n"]
+
+    if not df_cost.empty:
+        if cost_agg == "sum":
+            cost = df_cost.groupby("model")["value"].sum().reset_index()
+            cost_col = "Total Cost (USD)"
+        else:
+            cost = df_cost.groupby("model")["value"].mean().reset_index()
+            cost_col = "Avg Cost per Eval (USD)"
+        cost.columns = ["model", cost_col]
+    else:
+        cost_col = "Total Cost (USD)" if cost_agg == "sum" else "Avg Cost per Eval (USD)"
+        cost = pd.DataFrame(columns=["model", cost_col])
+
+    summary = counts.merge(cost, on="model", how="left")
+    summary[cost_col] = summary[cost_col].fillna(0.0)
+    summary["Input Cost (1M Tokens)"] = summary["model"].map(INPUT_PRICES).fillna("N/A")
+    return summary, cost_col, metric_label
 
 
 def mcnemar_exact_pvalue(b: int, c: int) -> float:
@@ -655,56 +751,53 @@ def compute_mcnemar_by_model(
     return results
 
 
-def compute_utility_summary(
-    df_acc: pd.DataFrame,
+def _resolve_string_value(row: pd.Series) -> str | None:
+    """Coalesce categorical string value from multiple possible column names."""
+    for col in ("string_value", "stringValue", "value_string", "valueString"):
+        v = row.get(col)
+        if pd.notna(v) and str(v).strip():
+            return str(v).strip()
+    v = row.get("value")
+    if pd.notna(v) and str(v) in {
+        "true_positive", "false_positive", "true_negative", "false_negative",
+    }:
+        return str(v)
+    return None
+
+
+def compute_expected_cost_summary(
+    df_error_type: pd.DataFrame,
     df_cost: pd.DataFrame,
-    lambda_value: float,
-) -> tuple[pd.DataFrame, str, str]:
-    acc_col = "Average Accuracy"
+    c_fp: float,
+    c_fn: float,
+) -> pd.DataFrame:
+    """Per-model expected cost E_t[C](m) = C_t(m) + (C_FP*FP + C_FN*FN) / n."""
+    if df_error_type.empty:
+        return pd.DataFrame()
 
-    if df_cost.empty:
-        summary, cost_col = build_summary(df_acc, df_cost.assign(value=0.0), cost_agg="mean")
-        summary[cost_col] = 0.0
-    else:
-        summary, cost_col = build_summary(df_acc, df_cost, cost_agg="mean")
+    confusion = _confusion_counts(df_error_type, ["model"])
+    if confusion.empty:
+        return pd.DataFrame()
 
-    summary = summary.copy()
-    summary[acc_col] = pd.to_numeric(summary[acc_col], errors="coerce")
-    summary[cost_col] = pd.to_numeric(summary[cost_col], errors="coerce").fillna(0.0)
+    confusion["n"] = confusion["TP"] + confusion["FP"] + confusion["TN"] + confusion["FN"]
+    confusion["Accuracy"] = (confusion["TP"] + confusion["TN"]) / confusion["n"]
 
-    utility_col = "Utility U_lambda"
-    summary[utility_col] = summary[acc_col] - lambda_value * np.log1p(
-        summary[cost_col].clip(lower=0.0)
+    avg_cost = (
+        df_cost.groupby("model")["value"].mean().reset_index()
+        if not df_cost.empty
+        else pd.DataFrame(columns=["model", "value"])
+    )
+    avg_cost.columns = ["model", "Avg Inference Cost"]
+
+    summary = confusion.merge(avg_cost, on="model", how="left")
+    summary["Avg Inference Cost"] = summary["Avg Inference Cost"].fillna(0.0)
+
+    summary["Expected Cost"] = (
+        summary["Avg Inference Cost"]
+        + (c_fp * summary["FP"] + c_fn * summary["FN"]) / summary["n"]
     )
 
-    return summary, cost_col, utility_col
-
-
-def build_utility_sweep(
-    summary: pd.DataFrame,
-    acc_col: str,
-    cost_col: str,
-    lambda_max: float,
-    num_points: int = 100,
-) -> pd.DataFrame:
-    lambdas = np.linspace(0.0, lambda_max, num=num_points)
-    rows = []
-
-    for _, row in summary.iterrows():
-        accuracy = float(row[acc_col])
-        cost = max(float(row[cost_col]), 0.0)
-        utilities = accuracy - lambdas * np.log1p(cost)
-
-        for lam, utility in zip(lambdas, utilities):
-            rows.append(
-                {
-                    "lambda": lam,
-                    "model": row["model"],
-                    "utility": utility,
-                }
-            )
-
-    return pd.DataFrame(rows)
+    return summary
 
 
 # =============================================================================
@@ -739,22 +832,22 @@ def render_model_selector(df: pd.DataFrame, key: str) -> list[str]:
     return selected
 
 
-def accuracy_chart(daily_df: pd.DataFrame) -> alt.Chart:
+def metric_chart(daily_df: pd.DataFrame, metric_label: str) -> alt.Chart:
     return (
         alt.Chart(daily_df)
         .mark_line(point=True)
         .encode(
             x=alt.X("date:T", title="Date", axis=alt.Axis(format="%b %d", labelAngle=-45)),
             y=alt.Y(
-                "accuracy:Q",
-                title="Accuracy",
+                "metric_value:Q",
+                title=metric_label,
                 scale=alt.Scale(domain=[0, 1.05], clamp=True, nice=False),
             ),
             color=alt.Color("model:N", title="Model"),
             tooltip=[
                 "date:T",
                 "model:N",
-                alt.Tooltip("accuracy:Q", format=".2f"),
+                alt.Tooltip("metric_value:Q", title=metric_label, format=".2f"),
             ],
         )
         .properties(height=400)
@@ -762,56 +855,21 @@ def accuracy_chart(daily_df: pd.DataFrame) -> alt.Chart:
     )
 
 
-def utility_chart(
-    df_sweep: pd.DataFrame,
-    current_lambda: float,
-    highlight_model: str,
-) -> alt.Chart:
-    base = alt.Chart(df_sweep).mark_line(point=True)
-
-    if highlight_model == "(all models)":
-        chart = base.encode(
-            x=alt.X("lambda:Q", title="λ"),
-            y=alt.Y("utility:Q", title="Utility U_t(m)"),
-            color=alt.Color("model:N", title="Model"),
-            tooltip=[
-                alt.Tooltip("lambda:Q", title="λ", format=".2f"),
-                alt.Tooltip("model:N", title="Model"),
-                alt.Tooltip("utility:Q", title="Utility", format=".4f"),
-            ],
-        )
-    else:
-        chart = base.encode(
-            x=alt.X("lambda:Q", title="λ"),
-            y=alt.Y("utility:Q", title="Utility U_t(m)"),
-            color=alt.Color("model:N", title="Model"),
-            opacity=alt.condition(
-                alt.FieldEqualPredicate(field="model", equal=highlight_model),
-                alt.value(1.0),
-                alt.value(0.15),
-            ),
-            tooltip=[
-                alt.Tooltip("lambda:Q", title="λ", format=".2f"),
-                alt.Tooltip("model:N", title="Model"),
-                alt.Tooltip("utility:Q", title="Utility", format=".4f"),
-            ],
-        )
-
-    rule = (
-        alt.Chart(pd.DataFrame({"lambda": [current_lambda]}))
-        .mark_rule(color="black", strokeDash=[4, 4])
-        .encode(x="lambda:Q")
-    )
-
-    return (chart.properties(height=400).interactive() + rule)
-
-
 # =============================================================================
 # Tabs
 # =============================================================================
 
 def render_overview_tab(default_date: date, today: date) -> None:
-    st.subheader("Model Accuracy Over Time")
+    st.subheader("Model Metrics Over Time")
+
+    metric_key = st.selectbox(
+        "Metric",
+        options=[k for k, _ in METRIC_OPTIONS],
+        format_func=lambda k: _METRIC_LABELS[k],
+        index=0,
+        key="overview_metric",
+    )
+    metric_label = _METRIC_LABELS[metric_key]
 
     date_from, date_to = render_date_range_inputs(
         from_key="overview_from",
@@ -835,38 +893,52 @@ def render_overview_tab(default_date: date, today: date) -> None:
     selected_models = render_model_selector(df, key="overview_models")
     df = df[df["model"].isin(selected_models)]
 
-    df_acc = df[df["score_name"] == "accuracy"].copy()
+    df_error_type = df[df["score_name"] == "error_type"].copy()
     df_cost = df[df["score_name"] == "cost_usd"].copy()
 
-    if df_acc.empty:
-        st.warning("No accuracy data for the selected models / dates.")
+    if df_error_type.empty:
+        st.warning(
+            "No error\\_type scores found. "
+            "Re-run `export_langfuse_csv.py` to include `stringValue` for categorical scores."
+        )
         return
 
-    st.subheader("Accuracy Over Time by Model")
-    st.altair_chart(accuracy_chart(build_daily_accuracy(df_acc)), use_container_width=True)
+    daily = build_daily_metric(df_error_type, metric_key)
+    if daily.empty:
+        st.warning(f"No valid data to compute {metric_label} for the selected models / dates.")
+        return
+
+    st.subheader(f"{metric_label} Over Time by Model")
+    st.altair_chart(metric_chart(daily, metric_label), use_container_width=True)
 
     last_ts = df["timestamp"].max()
     if pd.notna(last_ts):
         last_date = last_ts.date()
-        df_acc_last = df_acc[df_acc["timestamp"].dt.date == last_date]
+        df_et_last = df_error_type[df_error_type["timestamp"].dt.date == last_date]
         df_cost_last = df_cost[df_cost["timestamp"].dt.date == last_date]
 
-        if not df_acc_last.empty:
+        if not df_et_last.empty:
             st.subheader(f"Last Launch ({last_date.isoformat()})")
-            summary_last, cost_col_last = build_summary(df_acc_last, df_cost_last, cost_agg="sum")
-            st.dataframe(
-                summary_last.style.format(
-                    {"Average Accuracy": "{:.2%}", cost_col_last: "${:.6f}"}
-                ),
-                width="stretch",
+            summary_last, cost_col_last, ml = build_metric_summary(
+                df_et_last, df_cost_last, metric_key, cost_agg="sum",
             )
+            if not summary_last.empty:
+                st.dataframe(
+                    summary_last[["model", ml, "Evaluations", cost_col_last, "Input Cost (1M Tokens)"]]
+                    .style.format({ml: "{:.2%}", cost_col_last: "${:.6f}"}),
+                    use_container_width=True,
+                )
 
     st.subheader("Aggregated Results (Selected Period)")
-    summary, cost_col = build_summary(df_acc, df_cost, cost_agg="mean")
-    st.dataframe(
-        summary.style.format({"Average Accuracy": "{:.2%}", cost_col: "${:.6f}"}),
-        width="stretch",
+    summary, cost_col, ml = build_metric_summary(
+        df_error_type, df_cost, metric_key, cost_agg="mean",
     )
+    if not summary.empty:
+        st.dataframe(
+            summary[["model", ml, "Evaluations", cost_col, "Input Cost (1M Tokens)"]]
+            .style.format({ml: "{:.2%}", cost_col: "${:.6f}"}),
+            use_container_width=True,
+        )
 
 
 def render_mcnemar_tab(default_date: date) -> None:
@@ -912,24 +984,31 @@ def render_mcnemar_tab(default_date: date) -> None:
         st.markdown(f"**Exact binomial p-value:** `{result['p_value']:.6g}`")
 
 
-def render_utility_tab(default_date: date, today: date) -> None:
-    st.markdown("### Deployment Utility $U_t(m)$")
+def render_expected_cost_tab(default_date: date, today: date) -> None:
+    st.markdown("### Cost-Aware Deployment: Expected Cost $E_t[\\mathcal{C}](m)$")
 
     st.markdown(
-        "We define the deployment utility for model $m$ over the selected period as"
+        "The per-request expected cost combines inference expenditure "
+        "with asymmetric misclassification penalties:"
     )
-    st.latex(r"U_t(m) = A_t(m) - \lambda \cdot \log(1 + C_t(m))")
-    st.markdown(
-        "where $A_t(m)$ is the average accuracy and $C_t(m)$ is the chosen cost aggregate."
+    st.latex(
+        r"E_t[\mathcal{C}](m)"
+        r" = C_t(m)"
+        r" + \frac{C_{\mathrm{FP}} \cdot \mathrm{FP}_t(m)"
+        r"       + C_{\mathrm{FN}} \cdot \mathrm{FN}_t(m)}{n}"
     )
     st.markdown(
-        "- When $\\lambda = 0$, models are ranked purely by accuracy.\n"
-        "- When $\\lambda > 0$, more expensive models are penalized with a logarithmic cost term."
+        "- $C_t(m)$: average inference cost (USD per request)\n"
+        "- $C_{\\mathrm{FP}}$: business cost of one false positive\n"
+        "- $C_{\\mathrm{FN}}$: business cost of one false negative\n"
+        "- For **ranking** models only the ratio "
+        "$r = C_{\\mathrm{FN}} / C_{\\mathrm{FP}}$ matters.\n"
+        "- The preferred model minimises $E_t[\\mathcal{C}](m)$."
     )
 
     date_from, date_to = render_date_range_inputs(
-        from_key="utility_from",
-        to_key="utility_to",
+        from_key="cost_from",
+        to_key="cost_to",
         default_from=default_date,
         default_to=today,
         max_value=today,
@@ -946,86 +1025,86 @@ def render_utility_tab(default_date: date, today: date) -> None:
 
     df["timestamp"] = ensure_utc_timestamp(df["timestamp"])
 
-    selected_models = render_model_selector(df, key="utility_models")
+    selected_models = render_model_selector(df, key="cost_models")
     df = df[df["model"].isin(selected_models)]
 
-    df_acc = df[df["score_name"] == "accuracy"].copy()
+    df_error_type = df[df["score_name"] == "error_type"].copy()
     df_cost = df[df["score_name"] == "cost_usd"].copy()
 
-    if df_acc.empty:
-        st.warning("No accuracy data for the selected models / dates.")
+    if df_error_type.empty:
+        st.warning(
+            "No error\\_type scores found. "
+            "Re-run `export_langfuse_csv.py` to include `stringValue` for categorical scores."
+        )
         return
+
+    st.divider()
+
+    col_cfp, col_cfn, col_r = st.columns(3)
+    with col_cfp:
+        c_fp = st.number_input(
+            "C_FP (cost of one false positive, USD)",
+            min_value=0.0,
+            value=1.0,
+            step=0.10,
+            format="%.2f",
+            key="cost_c_fp",
+        )
+    with col_cfn:
+        c_fn = st.number_input(
+            "C_FN (cost of one false negative, USD)",
+            min_value=0.0,
+            value=1.0,
+            step=0.10,
+            format="%.2f",
+            key="cost_c_fn",
+        )
+    with col_r:
+        if c_fp > 0:
+            r_current = c_fn / c_fp
+            st.metric("r = C_FN / C_FP", f"{r_current:.2f}")
+        else:
+            r_current = float("inf")
+            st.metric("r = C_FN / C_FP", "∞")
 
     if df_cost.empty:
-        st.info(
-            "No cost data found for the selected models / dates. "
-            "Assuming average cost per evaluation is 0 for all models."
-        )
+        st.info("No cost data found; inference cost assumed $0 for all models.")
 
-    lambda_value = st.slider(
-        "λ (cost sensitivity)",
-        min_value=0.0,
-        max_value=10.0,
-        value=1.0,
-        step=0.1,
-        key="utility_lambda",
-    )
-
-    summary, cost_col, utility_col = compute_utility_summary(df_acc, df_cost, lambda_value)
+    summary = compute_expected_cost_summary(df_error_type, df_cost, c_fp, c_fn)
     if summary.empty:
-        st.info("No aggregated data available to compute utility.")
+        st.warning(
+            "Could not compute confusion matrix. "
+            "Ensure `stringValue` is present in `langfuse_scores.csv` for error\\_type rows."
+        )
         return
 
-    acc_col = "Average Accuracy"
+    cost_col = "Expected Cost"
+    acc_col = "Accuracy"
+    inf_col = "Avg Inference Cost"
 
-    if summary[utility_col].notna().any():
-        best_row = summary.loc[summary[utility_col].idxmax()]
+    if summary[cost_col].notna().any():
+        best_row = summary.loc[summary[cost_col].idxmin()]
         st.success(
-            f"Best model for λ = {lambda_value:.2f} is **{best_row['model']}** "
-            f"with utility = {best_row[utility_col]:.4f}, "
+            f"Best model: **{best_row['model']}** "
+            f"with E[C] = ${best_row[cost_col]:.6f}/req, "
             f"accuracy = {best_row[acc_col]:.2%}, "
-            f"cost = {best_row[cost_col]:.6f} USD."
+            f"inference cost = ${best_row[inf_col]:.6f}/req."
         )
 
-    st.subheader("Per-model metrics for selected λ")
+    st.subheader("Per-model confusion matrix and expected cost")
+    display_cols = ["model", "TP", "FP", "TN", "FN", "n", acc_col, inf_col, cost_col]
     styled = (
-        summary[["model", acc_col, cost_col, utility_col]]
+        summary[display_cols]
         .style.format(
             {
                 acc_col: "{:.2%}",
+                inf_col: "${:.6f}",
                 cost_col: "${:.6f}",
-                utility_col: "{:.4f}",
             }
         )
-        .highlight_max(subset=[utility_col], color="#d1ffd1")
+        .highlight_min(subset=[cost_col], color="#d1ffd1")
     )
-    st.dataframe(styled, width="stretch")
-
-    st.subheader("Utility vs λ for each model")
-
-    lambda_max = st.slider(
-        "Maximum λ for sweep",
-        min_value=0.5,
-        max_value=20.0,
-        value=10.0,
-        step=0.5,
-        key="utility_lambda_max",
-    )
-
-    df_sweep = build_utility_sweep(summary, acc_col, cost_col, lambda_max)
-
-    highlight_options = ["(all models)"] + sorted(summary["model"].unique())
-    highlight_model = st.selectbox(
-        "Highlight model in utility chart",
-        options=highlight_options,
-        index=0,
-        key="utility_highlight_model",
-    )
-
-    st.altair_chart(
-        utility_chart(df_sweep, lambda_value, highlight_model),
-        use_container_width=True,
-    )
+    st.dataframe(styled, use_container_width=True)
 
 
 # =============================================================================
@@ -1040,8 +1119,8 @@ def main() -> None:
 
     st.title("Model Accuracy Dashboard")
 
-    tab_overview, tab_mcnemar, tab_utility = st.tabs(
-        ["Overview", "McNemar Test", "Utility Function"]
+    tab_overview, tab_mcnemar, tab_cost = st.tabs(
+        ["Overview", "McNemar Test", "Expected Cost"]
     )
 
     with tab_overview:
@@ -1050,8 +1129,8 @@ def main() -> None:
     with tab_mcnemar:
         render_mcnemar_tab(default_date)
 
-    with tab_utility:
-        render_utility_tab(default_date, today)
+    with tab_cost:
+        render_expected_cost_tab(default_date, today)
 
 
 try:
