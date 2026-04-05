@@ -11,6 +11,6 @@ reports/
 data/
 .idea/
 *.jsonl
-/scripts/just get datasets.ipynb
+/notebooks/just get datasets.ipynb
 /streamlit_app/accuracies.ipynb
 /streamlit_app/metrics_export/
