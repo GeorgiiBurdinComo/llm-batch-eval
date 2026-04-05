@@ -10,7 +10,8 @@ The pipeline runs in three stages:
 
 1. **Submit** — `run_eval.py` loads a labeled eval dataset from Langfuse (or CSV), writes per-provider batch **input JSONL** under `batches/` (one file per model), then uploads those files and submits asynchronous batch jobs to OpenAI, Gemini, and Claude Batch APIs. Outputs a manifest (`data/batch_ids.json`).
 2. **Retrieve & Ingest** — `poll_and_ingest.py` polls each provider until batches complete, downloads result JSONL, then scores every prediction against ground truth. Traces, generations, and scores (`accuracy`, `error_type`, `cost_usd`) are written to Langfuse.
-3. **Dashboard** — `export_langfuse_csv.py` writes two snapshots under `streamlit_app/`: **`langfuse_traces.csv`** (rows from `GET /api/public/traces` — trace ids, tags, metadata, fields the app joins on) and **`langfuse_scores.csv`** (rows from `GET /api/public/v2/scores` — `accuracy`, `error_type`, `cost_usd`, etc., keyed to observations). The Streamlit app loads both and renders accuracy trends, cost breakdowns, and per-model comparisons.
+3. **Dashboard** — `export_langfuse_csv.py` writes two snapshots under `streamlit_app/`: `**langfuse_traces.csv`** (rows from `GET /api/public/traces` — trace ids, tags, metadata, fields the app joins on) and `**langfuse_scores.csv**` (rows from `GET /api/public/v2/scores` — `accuracy`, `error_type`, `cost_usd`, etc., keyed to observations). The Streamlit app loads both and renders accuracy trends, cost breakdowns, and per-model comparisons.
+
 ```mermaid
 flowchart TB
     ds["Dataset\nLangfuse or CSV"]
@@ -61,7 +62,7 @@ flowchart TB
 
 **First:** choose what to evaluate and what data to use.
 
-- **Models** — edit [`config/models.yaml`](config/models.yaml) (`openai` / `gemini` / `claude` lists). Optional: pass `--models gpt-5,claude-sonnet-4-6` on submit to run a subset without changing the file.
+- **Models** — edit `[config/models.yaml](config/models.yaml)` (`openai` / `gemini` / `claude` lists). Optional: pass `--models gpt-5,claude-sonnet-4-6` on submit to run a subset without changing the file.
 - **Dataset** — pass `--langfuse-dataset <name>` for a Langfuse dataset, or `--csv path/to.csv` for a local file. Use the **same** source when you run `poll_and_ingest.py` so ground-truth labels match.
 
 ```bash
@@ -76,7 +77,7 @@ python scripts/run_eval.py \
   --batch-ids data/batch_ids.json \
   --run-id local-001
 
-# 4. Retrieve results & ingest (run after batches complete, minutes–hours)
+# 4. Retrieve results & ingest (run after batches complete)
 python scripts/poll_and_ingest.py \
   --batch-ids data/batch_ids.json \
   --run-id local-001
@@ -191,11 +192,15 @@ Default OpenAI-style request body merged with each dataset row. Defines the stru
 ## CI/CD (GitHub Actions)
 
 
-| Workflow                       | Schedule                   | What it does                                             |
-| ------------------------------ | -------------------------- | -------------------------------------------------------- |
-| `weekly_drift_monitoring.yml`  | Friday 05:00 UTC           | Submit batches, cache `batch_ids.json`                   |
-| `weekly_retrieve.yml`          | Monday 05:00 UTC           | Restore cache, poll & ingest results into Langfuse       |
-| `sync-streamlit-dashboard.yml` | Monday 07:00 UTC + push to `main` changing `streamlit_app/` | Export CSVs, sync `streamlit_app/` to the dashboard repo |
+| Workflow                       | Schedule                                                    | What it does                                             |
+| ------------------------------ | ----------------------------------------------------------- | -------------------------------------------------------- |
+| `weekly_drift_monitoring.yml`  | Friday 05:00 UTC                                            | Submit batches, cache `batch_ids.json`                   |
+| `weekly_retrieve.yml`          | Monday 05:00 UTC                                            | Restore cache, poll & ingest results into Langfuse       |
+| `sync-streamlit-dashboard.yml` | Monday 07:00 UTC + push to `main` changing `streamlit_app/` | Export Langfuse scores/traces CSVs, push `streamlit_app/` to the [dashboard repo](https://github.com/GeorgiiBurdinComo/llm-eval-dashboard) (details below) |
+
+**Dashboard:** [llm-eval-dashboard.streamlit.app](https://llm-eval-dashboard.streamlit.app/) · **repo:** [GeorgiiBurdinComo/llm-eval-dashboard](https://github.com/GeorgiiBurdinComo/llm-eval-dashboard)
+
+On the cron run (and when `main` changes under `streamlit_app/`), the workflow exports scores and traces from Langfuse into CSV files, commits them with the Streamlit app, and pushes to that repository. Streamlit Cloud builds and hosts the public app from it; the dashboard reads the CSVs committed there.
 
 
 ---
