@@ -134,7 +134,10 @@ def get_claude_batch_status(batch_id: str) -> Dict:
 
 
 def download_claude_batch_results(
-    batch_id: str, output_path: str, input_jsonl_path: Optional[str] = None,
+    batch_id: str,
+    output_path: str,
+    input_jsonl_path: Optional[str] = None,
+    id_map: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Download batch results as normalized JSONL."""
     status = get_claude_batch_status(batch_id)
@@ -145,7 +148,10 @@ def download_claude_batch_results(
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
 
-    id_map: Dict[str, Dict[str, Any]] = {}
+    # id_map can come from:
+    # - caller-provided mapping (e.g. manifest): {sanitized_id: original_custom_id}
+    # - input_jsonl_path records (preferred because it also contains body): {sanitized_id: {"original_custom_id": ..., "body": ...}}
+    resolved_map: Dict[str, Any] = dict(id_map or {})
     if input_jsonl_path and os.path.isfile(input_jsonl_path):
         with open(input_jsonl_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -155,7 +161,7 @@ def download_claude_batch_results(
                 obj = json.loads(line)
                 san = obj.get("sanitized_id") or obj.get("custom_id")
                 if san:
-                    id_map[str(san)] = {"original_custom_id": obj.get("custom_id"), "body": obj.get("body")}
+                    resolved_map[str(san)] = {"original_custom_id": obj.get("custom_id"), "body": obj.get("body")}
 
     resp = requests.get(
         f"https://api.anthropic.com/v1/messages/batches/{batch_id}/results",
@@ -174,7 +180,9 @@ def download_claude_batch_results(
             result = item.get("result") or {}
             message = result.get("message") or {} if result.get("type") == "succeeded" else {"result_type": result.get("type"), "error": result}
 
-            mapping = id_map.get(str(item.get("custom_id"))) or {}
+            mapping = resolved_map.get(str(item.get("custom_id"))) or {}
+            if isinstance(mapping, str):
+                mapping = {"original_custom_id": mapping}
             out: Dict[str, Any] = {
                 "custom_id": mapping.get("original_custom_id", item.get("custom_id")),
                 "response": message,

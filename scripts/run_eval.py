@@ -26,6 +26,27 @@ import batch_claude
 from upload_gemini_images import ensure_images_uploaded
 
 
+def _load_claude_id_map_from_input_jsonl(path: str) -> dict:
+    """Return {sanitized_id: original_custom_id} from claude_<model>_input.jsonl."""
+    out: dict = {}
+    if not path or not os.path.isfile(path):
+        return out
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            san = obj.get("sanitized_id")
+            orig = obj.get("custom_id")
+            if san and orig is not None:
+                out[str(san)] = str(orig)
+    return out
+
+
 def load_models_config(config_path: str = None) -> dict:
     with open(config_path or os.path.join(ROOT, "config", "models.yaml"), "r") as f:
         return yaml.safe_load(f)
@@ -85,7 +106,13 @@ def run_submit(
             continue
         try:
             bid = create_fns[provider](model, subset)
-            batch_ids.append({"model": model, "provider": provider, "batch_id": bid})
+            entry = {"model": model, "provider": provider, "batch_id": bid}
+            if provider == "claude":
+                input_jsonl_path = os.path.join(batches_dir, f"claude_{model}_input.jsonl")
+                id_map = _load_claude_id_map_from_input_jsonl(input_jsonl_path)
+                if id_map:
+                    entry["claude_id_map"] = id_map
+            batch_ids.append(entry)
         except Exception as e:
             print(f"[run_eval] Failed {model}: {e}")
             batch_ids.append({"model": model, "provider": provider, "batch_id": None, "error": str(e)})

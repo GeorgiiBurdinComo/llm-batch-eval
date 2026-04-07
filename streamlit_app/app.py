@@ -1040,37 +1040,86 @@ def render_expected_cost_tab(default_date: date, today: date) -> None:
 
     st.divider()
 
-    col_cfp, col_cfn, col_r = st.columns(3)
+    st.subheader("Misclassification trade-off (linked inputs)")
+
+    if "_cost_last_changed" not in st.session_state:
+        st.session_state["_cost_last_changed"] = "init"
+
+    def _sync_from_r() -> None:
+        st.session_state["_cost_last_changed"] = "r"
+        r_val = float(st.session_state.get("cost_ratio_r", 0.0) or 0.0)
+        c_fp_val = float(st.session_state.get("cost_c_fp_usd", 0.0) or 0.0)
+        if r_val > 0:
+            st.session_state["cost_c_fn_usd"] = c_fp_val / r_val
+        else:
+            # If R==0, only consistent solution is C_FP==0 (else undefined).
+            st.session_state["cost_c_fn_usd"] = 0.0
+            st.session_state["cost_c_fp_usd"] = 0.0
+
+    def _sync_from_c_fp() -> None:
+        st.session_state["_cost_last_changed"] = "c_fp"
+        c_fp_val = float(st.session_state.get("cost_c_fp_usd", 0.0) or 0.0)
+        c_fn_val = float(st.session_state.get("cost_c_fn_usd", 0.0) or 0.0)
+        if c_fn_val > 0:
+            st.session_state["cost_ratio_r"] = c_fp_val / c_fn_val
+        else:
+            st.session_state["cost_ratio_r"] = 0.0
+
+    def _sync_from_c_fn() -> None:
+        st.session_state["_cost_last_changed"] = "c_fn"
+        c_fp_val = float(st.session_state.get("cost_c_fp_usd", 0.0) or 0.0)
+        c_fn_val = float(st.session_state.get("cost_c_fn_usd", 0.0) or 0.0)
+        if c_fn_val > 0:
+            st.session_state["cost_ratio_r"] = c_fp_val / c_fn_val
+        else:
+            st.session_state["cost_ratio_r"] = 0.0
+
+    col_cfp, col_cfn, col_r = st.columns([1, 1, 1])
     with col_cfp:
-        c_fp = st.number_input(
-            "C_FP (cost of one false positive, USD)",
+        st.number_input(
+            "C_FP (USD)",
             min_value=0.0,
-            value=1.0,
+            value=float(st.session_state.get("cost_c_fp_usd", 1.0) or 1.0),
             step=0.10,
             format="%.2f",
-            key="cost_c_fp",
+            key="cost_c_fp_usd",
+            on_change=_sync_from_c_fp,
         )
     with col_cfn:
-        c_fn = st.number_input(
-            "C_FN (cost of one false negative, USD)",
+        st.number_input(
+            "C_FN (USD)",
             min_value=0.0,
-            value=1.0,
+            value=float(st.session_state.get("cost_c_fn_usd", 1.0) or 1.0),
             step=0.10,
             format="%.2f",
-            key="cost_c_fn",
+            key="cost_c_fn_usd",
+            on_change=_sync_from_c_fn,
         )
     with col_r:
-        if c_fp > 0:
-            r_current = c_fn / c_fp
-            st.metric("r = C_FN / C_FP", f"{r_current:.2f}")
-        else:
-            r_current = float("inf")
-            st.metric("r = C_FN / C_FP", "∞")
+        st.number_input(
+            "R = C_FP / C_FN",
+            min_value=0.0,
+            value=float(st.session_state.get("cost_ratio_r", 1.0) or 1.0),
+            step=0.10,
+            format="%.2f",
+            key="cost_ratio_r",
+            help="You can edit any two of (C_FP, C_FN, R). The third auto-updates.",
+            on_change=_sync_from_r,
+        )
+
+    c_fp = float(st.session_state.get("cost_c_fp_usd", 0.0) or 0.0)
+    c_fn = float(st.session_state.get("cost_c_fn_usd", 0.0) or 0.0)
+    r_val = float(st.session_state.get("cost_ratio_r", 0.0) or 0.0)
+
+    st.caption(
+        f"Linked: **C_FP=${c_fp:.2f}**, **C_FN=${c_fn:.2f}**, **R={r_val:.2f}** "
+        f"(meaning 1 FP costs like {r_val:.2f} FNs)."
+    )
 
     if df_cost.empty:
         st.info("No cost data found; inference cost assumed $0 for all models.")
 
-    summary = compute_expected_cost_summary(df_error_type, df_cost, c_fp, c_fn)
+    summary = compute_expected_cost_summary(df_error_type, df_cost, c_fp=float(c_fp), c_fn=float(c_fn))
     if summary.empty:
         st.warning(
             "Could not compute confusion matrix. "
@@ -1082,14 +1131,40 @@ def render_expected_cost_tab(default_date: date, today: date) -> None:
     acc_col = "Accuracy"
     inf_col = "Avg Inference Cost"
 
+    best_model: str | None = None
     if summary[cost_col].notna().any():
         best_row = summary.loc[summary[cost_col].idxmin()]
+        best_model = str(best_row["model"])
         st.success(
-            f"Best model: **{best_row['model']}** "
-            f"with E[C] = ${best_row[cost_col]:.6f}/req, "
-            f"accuracy = {best_row[acc_col]:.2%}, "
-            f"inference cost = ${best_row[inf_col]:.6f}/req."
+            f"Best model: **{best_model}** with E[C] = ${best_row[cost_col]:.6f}/req "
+            f"(R={r_val:.2f}, C_FN=${c_fn:.2f}, C_FP=${c_fp:.2f})."
         )
+
+    st.subheader("Expected cost")
+    chart = (
+        alt.Chart(summary)
+        .mark_bar()
+        .encode(
+            x=alt.X("model:N", title="Model", sort="-y"),
+            y=alt.Y(f"{cost_col}:Q", title="Expected Cost (USD per request)"),
+            color=alt.condition(
+                alt.datum.model == best_model,
+                alt.value("#2ca02c"),
+                alt.value("#1f77b4"),
+            ),
+            tooltip=[
+                "model:N",
+                alt.Tooltip(f"{cost_col}:Q", format="$.6f"),
+                alt.Tooltip(f"{inf_col}:Q", format="$.6f"),
+                alt.Tooltip(f"{acc_col}:Q", format=".2%"),
+                "FP:Q",
+                "FN:Q",
+                "n:Q",
+            ],
+        )
+        .properties(height=360)
+    )
+    st.altair_chart(chart, use_container_width=True)
 
     st.subheader("Per-model confusion matrix and expected cost")
     display_cols = ["model", "TP", "FP", "TN", "FN", "n", acc_col, inf_col, cost_col]
