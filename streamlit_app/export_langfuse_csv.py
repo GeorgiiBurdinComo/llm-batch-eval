@@ -330,6 +330,11 @@ def print_final_counts(df_traces: pd.DataFrame, df_scores: pd.DataFrame) -> None
     print(report.to_string())
 
 
+def _select_existing_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    existing = [c for c in columns if c in df.columns]
+    return df.reindex(columns=existing)
+
+
 def main() -> None:
     end_dt = datetime.now(timezone.utc) - LANGFUSE_EXPORT_END_BUFFER
     start_dt = LANGFUSE_EXPORT_START_DT
@@ -339,8 +344,31 @@ def main() -> None:
     traces_raw = fetch_traces_windowed(start_dt, end_dt)
     scores_raw = fetch_scores_simple(start_dt, end_dt)
 
-    df_traces = pd.json_normalize(traces_raw) if traces_raw else pd.DataFrame()
-    df_scores = pd.json_normalize(scores_raw) if scores_raw else pd.DataFrame()
+    traces_full = pd.json_normalize(traces_raw) if traces_raw else pd.DataFrame()
+    scores_full = pd.json_normalize(scores_raw) if scores_raw else pd.DataFrame()
+
+    TRACE_EXPORT_COLUMNS = [
+        "id",
+        "timestamp",
+        "name",
+        "userId",
+        "sessionId",
+        "metadata.model",
+        "metadata.run_id",
+    ]
+
+    SCORE_EXPORT_COLUMNS = [
+        "id",
+        "traceId",
+        "name",
+        "timestamp",
+        "value",
+        "stringValue",
+        "comment",
+    ]
+
+    df_traces = _select_existing_columns(traces_full, TRACE_EXPORT_COLUMNS)
+    df_scores = _select_existing_columns(scores_full, SCORE_EXPORT_COLUMNS)
 
     out_dir = os.path.dirname(os.path.abspath(__file__))
     traces_csv = os.path.join(out_dir, "langfuse_traces.csv")
@@ -355,7 +383,8 @@ def main() -> None:
     print(f"Saved traces CSV: {traces_csv}")
     print(f"Saved scores CSV: {scores_csv}")
 
-    print_final_counts(df_traces, df_scores)
+    print("Trace columns:", df_traces.columns.tolist())
+    print("Score columns:", df_scores.columns.tolist())
 
 
 if __name__ == "__main__":
