@@ -61,8 +61,12 @@ def poll_until_done(
                     inputs = os.path.abspath(os.path.join(
                         os.path.dirname(batch_ids_path), "..", "batches", f"claude_{model}_input.jsonl",
                     ))
+                    claude_id_map = b.get("claude_id_map") if isinstance(b, dict) else None
                     batch_claude.download_claude_batch_results(
-                        bid, out_path, input_jsonl_path=inputs if os.path.isfile(inputs) else None,
+                        bid,
+                        out_path,
+                        input_jsonl_path=inputs if os.path.isfile(inputs) else None,
+                        id_map=claude_id_map if isinstance(claude_id_map, dict) else None,
                     )
             elif st["status"] in ("failed", "cancelled", "expired"):
                 # These states are non-retrievable; skip so ingestion can continue.
