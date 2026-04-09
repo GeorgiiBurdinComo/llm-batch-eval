@@ -354,6 +354,7 @@ def main() -> None:
         "userId",
         "sessionId",
         "metadata.model",
+        "metadata.custom_id",
         "metadata.run_id",
     ]
 
