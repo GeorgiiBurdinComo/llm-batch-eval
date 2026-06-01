@@ -78,11 +78,10 @@ def _probe_window(url: str, start_dt: datetime, end_dt: datetime) -> tuple[int, 
     payload = _get_json(
         url,
         {
-            "fromTimestamp": start_dt.isoformat(),
-            "toTimestamp": end_dt.isoformat(),
+            "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
+            "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
             "limit": 100,
             "page": 1,
-            "orderBy": "id.asc",
         },
     )
     meta = payload.get("meta", {})
@@ -174,11 +173,10 @@ def fetch_traces_windowed(
                 payload = _get_json(
                     url,
                     {
-                        "fromTimestamp": lo.isoformat(),
-                        "toTimestamp": hi.isoformat(),
+                        "fromTimestamp": lo.isoformat(timespec="milliseconds"),
+                        "toTimestamp": hi.isoformat(timespec="milliseconds"),
                         "limit": 100,
                         "page": page,
-                        "orderBy": "id.asc",
                     },
                 )
                 data = payload.get("data", [])
@@ -215,8 +213,8 @@ def fetch_scores_simple(start_dt: datetime, end_dt: datetime) -> list[dict[str, 
     first_payload = _get_json(
         url,
         {
-            "fromTimestamp": start_dt.isoformat(),
-            "toTimestamp": end_dt.isoformat(),
+            "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
+            "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
             "limit": 100,
             "page": 1,
         },
@@ -251,8 +249,8 @@ def fetch_scores_simple(start_dt: datetime, end_dt: datetime) -> list[dict[str, 
             payload = _get_json(
                 url,
                 {
-                    "fromTimestamp": start_dt.isoformat(),
-                    "toTimestamp": end_dt.isoformat(),
+                    "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
+                    "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
                     "limit": 100,
                     "page": page,
                 },
