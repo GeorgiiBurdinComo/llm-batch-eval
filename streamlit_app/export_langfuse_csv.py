@@ -11,7 +11,13 @@ import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from requests.auth import HTTPBasicAuth
-from requests.exceptions import ChunkedEncodingError, ConnectionError, Timeout
+from requests.exceptions import (
+    ChunkedEncodingError,
+    ConnectionError,
+    HTTPError,
+    RetryError,
+    Timeout,
+)
 from tqdm.auto import tqdm
 from urllib3.exceptions import ProtocolError
 from urllib3.util.retry import Retry
@@ -44,15 +50,20 @@ MIN_WINDOW = timedelta(seconds=1)
 # Optional extra logging for trace window splits.
 VERBOSE_SPLITS = True
 
-# Retries for transient transport errors (e.g. truncated chunked responses).
+# Retries for transient transport errors (e.g. truncated chunked responses,
+# urllib3 giving up after repeated 503s from an overloaded Langfuse backend).
 _GET_JSON_MAX_ATTEMPTS = 8
 _GET_JSON_TIMEOUT_SEC = 120
+_GET_JSON_MAX_BACKOFF_SEC = 120
 _TRANSIENT_GET_ERRORS = (
     ChunkedEncodingError,
     ConnectionError,
     Timeout,
     ProtocolError,
+    RetryError,
 )
+# HTTP status codes worth retrying when the server returns them directly.
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 session = requests.Session()
 session.auth = HTTPBasicAuth(PUBLIC_KEY, SECRET_KEY)
@@ -103,11 +114,22 @@ def _get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
             resp = session.get(url, params=params, timeout=_GET_JSON_TIMEOUT_SEC)
             resp.raise_for_status()
             return resp.json()
+        except HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status not in _RETRYABLE_STATUS or attempt >= _GET_JSON_MAX_ATTEMPTS:
+                raise
+            last_exc = exc
+            wait = min(2 ** attempt, _GET_JSON_MAX_BACKOFF_SEC)
+            print(
+                f"Retryable Langfuse API status {status}, "
+                f"retry {attempt}/{_GET_JSON_MAX_ATTEMPTS} in {wait}s..."
+            )
+            time.sleep(wait)
         except _TRANSIENT_GET_ERRORS as exc:
             last_exc = exc
             if attempt >= _GET_JSON_MAX_ATTEMPTS:
                 raise
-            wait = min(2 ** attempt, 60)
+            wait = min(2 ** attempt, _GET_JSON_MAX_BACKOFF_SEC)
             print(
                 f"Transient Langfuse API error ({type(exc).__name__}), "
                 f"retry {attempt}/{_GET_JSON_MAX_ATTEMPTS} in {wait}s..."
