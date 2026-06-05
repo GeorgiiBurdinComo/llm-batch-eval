@@ -91,7 +91,6 @@ def _trace_params(
     return {
         "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
         "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
-        "orderBy": "id.asc",
         "limit": limit,
         "page": page,
     }
@@ -141,7 +140,7 @@ def fetch_traces_windowed(
     window is small enough to paginate safely.
 
     Notes:
-    - We use explicit orderBy=id.asc to avoid unstable default ordering.
+    - Langfuse defaults to timestamp desc; dedup by trace id handles overlaps.
     - Langfuse meta.totalItems is raw rows, not deduped unique IDs.
     - Progress is tracked by fetched pages, discovered leaf windows, raw rows,
       and deduped unique IDs.
