@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,7 +11,9 @@ import requests
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from requests.auth import HTTPBasicAuth
+from requests.exceptions import ChunkedEncodingError, ConnectionError, Timeout
 from tqdm.auto import tqdm
+from urllib3.exceptions import ProtocolError
 from urllib3.util.retry import Retry
 
 # Config lives next to the Streamlit app; keep a fallback so running from inside
@@ -41,6 +44,16 @@ MIN_WINDOW = timedelta(seconds=1)
 # Optional extra logging for trace window splits.
 VERBOSE_SPLITS = True
 
+# Retries for transient transport errors (e.g. truncated chunked responses).
+_GET_JSON_MAX_ATTEMPTS = 8
+_GET_JSON_TIMEOUT_SEC = 120
+_TRANSIENT_GET_ERRORS = (
+    ChunkedEncodingError,
+    ConnectionError,
+    Timeout,
+    ProtocolError,
+)
+
 session = requests.Session()
 session.auth = HTTPBasicAuth(PUBLIC_KEY, SECRET_KEY)
 
@@ -68,22 +81,44 @@ class FetchStats:
     unique_ids: int = 0
 
 
+def _trace_params(
+    start_dt: datetime,
+    end_dt: datetime,
+    *,
+    page: int,
+    limit: int = 100,
+) -> dict[str, Any]:
+    return {
+        "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
+        "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
+        "orderBy": "id.asc",
+        "limit": limit,
+        "page": page,
+    }
+
+
 def _get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
-    resp = session.get(url, params=params, timeout=60)
-    resp.raise_for_status()
-    return resp.json()
+    last_exc: Exception | None = None
+    for attempt in range(1, _GET_JSON_MAX_ATTEMPTS + 1):
+        try:
+            resp = session.get(url, params=params, timeout=_GET_JSON_TIMEOUT_SEC)
+            resp.raise_for_status()
+            return resp.json()
+        except _TRANSIENT_GET_ERRORS as exc:
+            last_exc = exc
+            if attempt >= _GET_JSON_MAX_ATTEMPTS:
+                raise
+            wait = min(2 ** attempt, 60)
+            print(
+                f"Transient Langfuse API error ({type(exc).__name__}), "
+                f"retry {attempt}/{_GET_JSON_MAX_ATTEMPTS} in {wait}s..."
+            )
+            time.sleep(wait)
+    raise last_exc  # pragma: no cover
 
 
 def _probe_window(url: str, start_dt: datetime, end_dt: datetime) -> tuple[int, int]:
-    payload = _get_json(
-        url,
-        {
-            "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
-            "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
-            "limit": 100,
-            "page": 1,
-        },
-    )
+    payload = _get_json(url, _trace_params(start_dt, end_dt, page=1))
     meta = payload.get("meta", {})
     return int(meta.get("totalItems", 0)), int(meta.get("totalPages", 0))
 
@@ -170,15 +205,7 @@ def fetch_traces_windowed(
             _set_bar_postfix(pbar)
 
             for page in range(1, max(total_pages, 1) + 1):
-                payload = _get_json(
-                    url,
-                    {
-                        "fromTimestamp": lo.isoformat(timespec="milliseconds"),
-                        "toTimestamp": hi.isoformat(timespec="milliseconds"),
-                        "limit": 100,
-                        "page": page,
-                    },
-                )
+                payload = _get_json(url, _trace_params(lo, hi, page=page))
                 data = payload.get("data", [])
 
                 stats.pages_fetched += 1
