@@ -43,8 +43,9 @@ PUBLIC_KEY = os.environ["LANGFUSE_PUBLIC_KEY"]
 SECRET_KEY = os.environ["LANGFUSE_SECRET_KEY"]
 HOST = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com").rstrip("/")
 
-# How aggressively to split dense trace windows.
-MAX_PAGES_PER_WINDOW = 10
+# How aggressively to split dense trace windows. Langfuse can reject deeper
+# offset pages in dense trace windows with 422, so keep leaves below page 5.
+MAX_PAGES_PER_WINDOW = 4
 MIN_WINDOW = timedelta(seconds=1)
 
 # Optional extra logging for trace window splits.
@@ -64,6 +65,7 @@ _TRANSIENT_GET_ERRORS = (
 )
 # HTTP status codes worth retrying when the server returns them directly.
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_WINDOW_TOO_DENSE_STATUS = 422
 
 session = requests.Session()
 session.auth = HTTPBasicAuth(PUBLIC_KEY, SECRET_KEY)
@@ -226,7 +228,26 @@ def fetch_traces_windowed(
             _set_bar_postfix(pbar)
 
             for page in range(1, max(total_pages, 1) + 1):
-                payload = _get_json(url, _trace_params(lo, hi, page=page))
+                try:
+                    payload = _get_json(url, _trace_params(lo, hi, page=page))
+                except HTTPError as exc:
+                    status = exc.response.status_code if exc.response is not None else None
+                    if status != _WINDOW_TOO_DENSE_STATUS or (hi - lo) <= min_window:
+                        raise
+
+                    stats.windows_split += 1
+                    _set_bar_postfix(pbar)
+                    if VERBOSE_SPLITS:
+                        print(
+                            f"Splitting trace window after Langfuse rejected "
+                            f"page {page}: {lo.isoformat()} -> {hi.isoformat()}"
+                        )
+
+                    mid = lo + (hi - lo) / 2
+                    walk(lo, mid)
+                    walk(mid, hi)
+                    return
+
                 data = payload.get("data", [])
 
                 stats.pages_fetched += 1
