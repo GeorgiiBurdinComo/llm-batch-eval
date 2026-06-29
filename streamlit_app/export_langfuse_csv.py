@@ -140,6 +140,11 @@ def _get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
     raise last_exc  # pragma: no cover
 
 
+def _window_too_dense(exc: HTTPError) -> bool:
+    status = exc.response.status_code if exc.response is not None else None
+    return status == _WINDOW_TOO_DENSE_STATUS
+
+
 def _probe_window(url: str, start_dt: datetime, end_dt: datetime) -> tuple[int, int]:
     payload = _get_json(url, _trace_params(start_dt, end_dt, page=1))
     meta = payload.get("meta", {})
@@ -173,11 +178,19 @@ def fetch_traces_windowed(
     items_by_id: dict[str, dict[str, Any]] = {}
     stats = FetchStats()
 
-    root_items, root_pages = _probe_window(url, start_dt, end_dt)
-    print(
-        f"Traces root window: {root_items:,} raw rows reported across "
-        f"{root_pages:,} pages before splitting"
-    )
+    try:
+        root_items, root_pages = _probe_window(url, start_dt, end_dt)
+        print(
+            f"Traces root window: {root_items:,} raw rows reported across "
+            f"{root_pages:,} pages before splitting"
+        )
+    except HTTPError as exc:
+        if not _window_too_dense(exc):
+            raise
+        print(
+            "Traces root window: Langfuse rejected probe (dense window); "
+            "splitting recursively"
+        )
 
     def _set_bar_postfix(pbar: tqdm) -> None:
         pbar.set_postfix(
@@ -195,31 +208,73 @@ def fetch_traces_windowed(
         dynamic_ncols=True,
     ) as pbar:
 
+        def _ingest_page(payload: dict[str, Any], pbar: tqdm) -> None:
+            data = payload.get("data", [])
+            stats.pages_fetched += 1
+            stats.raw_rows += len(data)
+            for row in data:
+                items_by_id[row["id"]] = row
+            stats.unique_ids = len(items_by_id)
+            pbar.update(1)
+            _set_bar_postfix(pbar)
+
+        def _split_window(lo: datetime, hi: datetime, reason: str) -> None:
+            stats.windows_split += 1
+            _set_bar_postfix(pbar)
+            if VERBOSE_SPLITS:
+                print(
+                    f"Splitting trace window ({reason}): "
+                    f"{lo.isoformat()} -> {hi.isoformat()}"
+                )
+            mid = lo + (hi - lo) / 2
+            walk(lo, mid)   # [lo, mid)
+            walk(mid, hi)   # [mid, hi)
+
+        def _fetch_best_effort_leaf(lo: datetime, hi: datetime, pbar: tqdm) -> None:
+            """Grab page 1 when even the smallest window is too dense to paginate."""
+            stats.leaf_windows += 1
+            pbar.total = (pbar.total or 0) + 1
+            pbar.refresh()
+            _set_bar_postfix(pbar)
+            try:
+                payload = _get_json(url, _trace_params(lo, hi, page=1))
+            except HTTPError as exc:
+                if _window_too_dense(exc):
+                    print(
+                        "WARNING: skipping unreadable trace window at minimum size: "
+                        f"{lo.isoformat()} -> {hi.isoformat()}"
+                    )
+                    return
+                raise
+            _ingest_page(payload, pbar)
+
         def walk(lo: datetime, hi: datetime) -> None:
             if lo >= hi:
                 return
 
             stats.windows_probed += 1
-            total_items, total_pages = _probe_window(url, lo, hi)
+            try:
+                total_items, total_pages = _probe_window(url, lo, hi)
+            except HTTPError as exc:
+                if not _window_too_dense(exc):
+                    raise
+                if (hi - lo) > min_window:
+                    _split_window(lo, hi, "Langfuse rejected probe")
+                    return
+                _fetch_best_effort_leaf(lo, hi, pbar)
+                return
+
             _set_bar_postfix(pbar)
 
             if total_items == 0:
                 return
 
             if total_pages > max_pages_per_window and (hi - lo) > min_window:
-                stats.windows_split += 1
-                _set_bar_postfix(pbar)
-
-                if VERBOSE_SPLITS:
-                    print(
-                        f"Splitting dense trace window: "
-                        f"{lo.isoformat()} -> {hi.isoformat()} "
-                        f"({total_items:,} rows, {total_pages} pages)"
-                    )
-
-                mid = lo + (hi - lo) / 2
-                walk(lo, mid)   # [lo, mid)
-                walk(mid, hi)   # [mid, hi)
+                _split_window(
+                    lo,
+                    hi,
+                    f"{total_items:,} rows, {total_pages} pages",
+                )
                 return
 
             stats.leaf_windows += 1
@@ -231,35 +286,23 @@ def fetch_traces_windowed(
                 try:
                     payload = _get_json(url, _trace_params(lo, hi, page=page))
                 except HTTPError as exc:
-                    status = exc.response.status_code if exc.response is not None else None
-                    if status != _WINDOW_TOO_DENSE_STATUS or (hi - lo) <= min_window:
+                    if not _window_too_dense(exc):
                         raise
-
-                    stats.windows_split += 1
-                    _set_bar_postfix(pbar)
-                    if VERBOSE_SPLITS:
-                        print(
-                            f"Splitting trace window after Langfuse rejected "
-                            f"page {page}: {lo.isoformat()} -> {hi.isoformat()}"
+                    if (hi - lo) > min_window:
+                        _split_window(
+                            lo,
+                            hi,
+                            f"Langfuse rejected page {page}",
                         )
-
-                    mid = lo + (hi - lo) / 2
-                    walk(lo, mid)
-                    walk(mid, hi)
+                        return
+                    print(
+                        "WARNING: incomplete trace window at minimum size "
+                        f"(stopped at page {page}): "
+                        f"{lo.isoformat()} -> {hi.isoformat()}"
+                    )
                     return
 
-                data = payload.get("data", [])
-
-                stats.pages_fetched += 1
-                stats.raw_rows += len(data)
-
-                for row in data:
-                    items_by_id[row["id"]] = row
-
-                stats.unique_ids = len(items_by_id)
-
-                pbar.update(1)
-                _set_bar_postfix(pbar)
+                _ingest_page(payload, pbar)
 
         walk(start_dt, end_dt)
 
