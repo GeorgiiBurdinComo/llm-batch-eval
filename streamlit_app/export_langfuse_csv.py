@@ -314,71 +314,157 @@ def fetch_traces_windowed(
     return list(items_by_id.values())
 
 
-def fetch_scores_simple(start_dt: datetime, end_dt: datetime) -> list[dict[str, Any]]:
+def fetch_scores_windowed(
+    start_dt: datetime,
+    end_dt: datetime,
+    max_pages_per_window: int = MAX_PAGES_PER_WINDOW,
+    min_window: timedelta = MIN_WINDOW,
+) -> list[dict[str, Any]]:
     """
-    Fetch scores with regular page-based pagination.
-    Progress is tracked across pages, raw rows, and deduped score IDs.
+    Fetch scores robustly by recursively splitting the time range until each
+    window is small enough to paginate safely.
+
+    Notes:
+    - Langfuse defaults to timestamp desc; dedup by score id handles overlaps.
+    - Langfuse meta.totalItems is raw rows, not deduped unique IDs.
+    - Progress is tracked by fetched pages, discovered leaf windows, raw rows,
+      and deduped unique IDs.
     """
     url = f"{HOST}/api/public/v2/scores"
     items_by_id: dict[str, dict[str, Any]] = {}
+    stats = FetchStats()
 
-    first_payload = _get_json(
-        url,
-        {
-            "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
-            "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
-            "limit": 100,
-            "page": 1,
-        },
-    )
+    try:
+        root_items, root_pages = _probe_window(url, start_dt, end_dt)
+        print(
+            f"Scores root window: {root_items:,} raw rows reported across "
+            f"{root_pages:,} pages before splitting"
+        )
+    except HTTPError as exc:
+        if not _window_too_dense(exc):
+            raise
+        print(
+            "Scores root window: Langfuse rejected probe (dense window); "
+            "splitting recursively"
+        )
 
-    first_data = first_payload.get("data", [])
-    first_meta = first_payload.get("meta", {})
-    total_pages = int(first_meta.get("totalPages", 1))
-    total_items = int(first_meta.get("totalItems", len(first_data)))
-
-    print(
-        f"Scores root window: {total_items:,} raw rows reported across "
-        f"{total_pages:,} pages"
-    )
-
-    raw_rows = 0
+    def _set_bar_postfix(pbar: tqdm) -> None:
+        pbar.set_postfix(
+            windows=stats.windows_probed,
+            splits=stats.windows_split,
+            leafs=stats.leaf_windows,
+            raw_rows=f"{stats.raw_rows:,}",
+            unique_ids=f"{stats.unique_ids:,}",
+        )
 
     with tqdm(
-        total=max(total_pages, 1),
+        total=0,
         desc="Scores pages",
         unit="page",
         dynamic_ncols=True,
     ) as pbar:
-        for row in first_data:
-            items_by_id[row["id"]] = row
-        raw_rows += len(first_data)
 
-        pbar.update(1)
-        pbar.set_postfix(raw_rows=f"{raw_rows:,}", unique_ids=f"{len(items_by_id):,}")
-
-        for page in range(2, total_pages + 1):
-            payload = _get_json(
-                url,
-                {
-                    "fromTimestamp": start_dt.isoformat(timespec="milliseconds"),
-                    "toTimestamp": end_dt.isoformat(timespec="milliseconds"),
-                    "limit": 100,
-                    "page": page,
-                },
-            )
+        def _ingest_page(payload: dict[str, Any], pbar: tqdm) -> None:
             data = payload.get("data", [])
-
-            raw_rows += len(data)
+            stats.pages_fetched += 1
+            stats.raw_rows += len(data)
             for row in data:
                 items_by_id[row["id"]] = row
-
+            stats.unique_ids = len(items_by_id)
             pbar.update(1)
-            pbar.set_postfix(raw_rows=f"{raw_rows:,}", unique_ids=f"{len(items_by_id):,}")
+            _set_bar_postfix(pbar)
+
+        def _split_window(lo: datetime, hi: datetime, reason: str) -> None:
+            stats.windows_split += 1
+            _set_bar_postfix(pbar)
+            if VERBOSE_SPLITS:
+                print(
+                    f"Splitting scores window ({reason}): "
+                    f"{lo.isoformat()} -> {hi.isoformat()}"
+                )
+            mid = lo + (hi - lo) / 2
+            walk(lo, mid)   # [lo, mid)
+            walk(mid, hi)   # [mid, hi)
+
+        def _fetch_best_effort_leaf(lo: datetime, hi: datetime, pbar: tqdm) -> None:
+            """Grab page 1 when even the smallest window is too dense to paginate."""
+            stats.leaf_windows += 1
+            pbar.total = (pbar.total or 0) + 1
+            pbar.refresh()
+            _set_bar_postfix(pbar)
+            try:
+                payload = _get_json(url, _trace_params(lo, hi, page=1))
+            except HTTPError as exc:
+                if _window_too_dense(exc):
+                    print(
+                        "WARNING: skipping unreadable scores window at minimum size: "
+                        f"{lo.isoformat()} -> {hi.isoformat()}"
+                    )
+                    return
+                raise
+            _ingest_page(payload, pbar)
+
+        def walk(lo: datetime, hi: datetime) -> None:
+            if lo >= hi:
+                return
+
+            stats.windows_probed += 1
+            try:
+                total_items, total_pages = _probe_window(url, lo, hi)
+            except HTTPError as exc:
+                if not _window_too_dense(exc):
+                    raise
+                if (hi - lo) > min_window:
+                    _split_window(lo, hi, "Langfuse rejected probe")
+                    return
+                _fetch_best_effort_leaf(lo, hi, pbar)
+                return
+
+            _set_bar_postfix(pbar)
+
+            if total_items == 0:
+                return
+
+            if total_pages > max_pages_per_window and (hi - lo) > min_window:
+                _split_window(
+                    lo,
+                    hi,
+                    f"{total_items:,} rows, {total_pages} pages",
+                )
+                return
+
+            stats.leaf_windows += 1
+            pbar.total = (pbar.total or 0) + max(total_pages, 1)
+            pbar.refresh()
+            _set_bar_postfix(pbar)
+
+            for page in range(1, max(total_pages, 1) + 1):
+                try:
+                    payload = _get_json(url, _trace_params(lo, hi, page=page))
+                except HTTPError as exc:
+                    if not _window_too_dense(exc):
+                        raise
+                    if (hi - lo) > min_window:
+                        _split_window(
+                            lo,
+                            hi,
+                            f"Langfuse rejected page {page}",
+                        )
+                        return
+                    print(
+                        "WARNING: incomplete scores window at minimum size "
+                        f"(stopped at page {page}): "
+                        f"{lo.isoformat()} -> {hi.isoformat()}"
+                    )
+                    return
+
+                _ingest_page(payload, pbar)
+
+        walk(start_dt, end_dt)
 
     print(
-        f"Scores done: {total_pages:,} pages fetched, "
-        f"{raw_rows:,} raw rows seen, "
+        f"Scores done: {stats.pages_fetched:,} pages fetched, "
+        f"{stats.raw_rows:,} raw rows seen, "
         f"{len(items_by_id):,} unique IDs kept"
     )
     return list(items_by_id.values())
@@ -452,7 +538,7 @@ def main() -> None:
     print(f"Trace export: {start_dt.isoformat()} -> {end_dt.isoformat()}")
 
     traces_raw = fetch_traces_windowed(start_dt, end_dt)
-    scores_raw = fetch_scores_simple(start_dt, end_dt)
+    scores_raw = fetch_scores_windowed(start_dt, end_dt)
 
     traces_full = pd.json_normalize(traces_raw) if traces_raw else pd.DataFrame()
     scores_full = pd.json_normalize(scores_raw) if scores_raw else pd.DataFrame()
