@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write  # for committing Langfuse CSVs
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,8 +28,26 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/batch_ids.json
-          key: weekly-batch-ids-
-          restore-keys: weekly-batch-ids-
+          key: weekly-batch-ids-latest
+          restore-keys: |
+            weekly-batch-ids-latest
+            weekly-batch-ids-
+      - name: Download batch_ids from latest submit run
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f data/batch_ids.json ]; then
+            echo "batch_ids.json already restored from cache"
+            exit 0
+          fi
+          RUN_ID=$(gh run list --workflow weekly_drift_monitoring.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "No successful submit workflow run found"
+            exit 0
+          fi
+          mkdir -p data
+          gh run download "$RUN_ID" -n batch_ids -D data
       - name: Show cached batch_ids.json
         run: |
           echo "Cached file exists?"
@@ -42,6 +61,5 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          RUN_ID: gha-${{ github.run_id }}
         run: |
-          python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --interval 60 --max-wait 3600 --run-id "$RUN_ID"
+          python scripts/poll_and_ingest.py --batch-ids data/batch_ids.json --interval 60 --max-wait 3600

@@ -31,23 +31,34 @@ def poll_until_done(
     run_id: Optional[str] = None,
     poll_interval_sec: int = 300,
     max_wait_sec: int = 86400 * 2,
-    wait_for_all: bool = False,
+    wait_for_all: bool = True,
 ) -> None:
     with open(batch_ids_path) as f:
         data = json.load(f)
     batches = [b for b in data.get("batches", []) if b.get("batch_id")]
+    skipped_submit = [
+        f"{b.get('provider', '?')}/{b.get('model', '?')}"
+        for b in data.get("batches", [])
+        if not b.get("batch_id")
+    ]
+    if skipped_submit:
+        print(f"[poll] {len(skipped_submit)} batches had no batch_id at submit time: {skipped_submit}")
+
     run_id = run_id or data.get("run_id") or os.getenv("RUN_ID")
     os.makedirs(results_dir, exist_ok=True)
 
+    terminal_skip: dict[str, str] = {}
     unresolved = list(batches)
     start = time.time()
     while unresolved and (time.time() - start < max_wait_sec):
         pending = []
         for b in unresolved:
             bid, provider, model = b["batch_id"], b["provider"], b["model"]
+            label = f"{provider}/{model}"
             fn = _STATUS_FN.get(provider)
             if not fn:
                 print(f"[poll] Unknown provider {provider} for {model}")
+                terminal_skip[label] = "unknown_provider"
                 continue
 
             st = fn(bid)
@@ -69,14 +80,14 @@ def poll_until_done(
                         id_map=claude_id_map if isinstance(claude_id_map, dict) else None,
                     )
             elif st["status"] in ("failed", "cancelled", "expired"):
-                # These states are non-retrievable; skip so ingestion can continue.
-                print(f"[poll] Skipping {provider}/{model}: {st['status']} (cannot download results)")
+                terminal_skip[label] = st["status"]
+                print(f"[poll] Skipping {label}: {st['status']} (cannot download results)")
             else:
                 if wait_for_all:
                     pending.append(b)
                 else:
-                    # Some providers can remain in progress forever; skip unresolved jobs.
-                    print(f"[poll] Skipping {provider}/{model}: {st['status']} (not ready yet)")
+                    terminal_skip[label] = st["status"]
+                    print(f"[poll] Skipping {label}: {st['status']} (not ready yet)")
 
         if not wait_for_all:
             break
@@ -89,14 +100,32 @@ def poll_until_done(
     else:
         if wait_for_all and unresolved:
             pending_labels = [f"{b['provider']}/{b['model']}" for b in unresolved]
+            for label in pending_labels:
+                terminal_skip.setdefault(label, "timeout")
             print(f"[poll] Timeout; skipping unresolved batches: {pending_labels[:5]}...")
 
+    ingested: list[str] = []
+    missing_jsonl: list[str] = []
     for b in batches:
+        label = f"{b['provider']}/{b['model']}"
         out_path = os.path.join(results_dir, f"{b['provider']}_{b['model']}.jsonl")
         if os.path.isfile(out_path):
             ingest_results(out_path, b["model"], b["provider"],
                            ground_truth_csv=ground_truth_csv,
                            langfuse_dataset_name=langfuse_dataset_name, run_id=run_id)
+            ingested.append(label)
+        else:
+            missing_jsonl.append(label)
+
+    print("\n[poll] Summary")
+    print(f"  submitted with batch_id: {len(batches)}")
+    print(f"  ingested: {len(ingested)} -> {ingested}")
+    if skipped_submit:
+        print(f"  failed at submit: {skipped_submit}")
+    if terminal_skip:
+        print(f"  skipped during poll: {terminal_skip}")
+    if missing_jsonl:
+        print(f"  completed poll but no jsonl: {missing_jsonl}")
 
 
 if __name__ == "__main__":
@@ -110,7 +139,11 @@ if __name__ == "__main__":
     p.add_argument("--run-id", default=None)
     p.add_argument("--interval", type=int, default=300)
     p.add_argument("--max-wait", type=int, default=86400 * 2)
-    p.add_argument("--wait-for-all", action="store_true", help="Keep polling until all batches are terminal")
+    p.add_argument(
+        "--once",
+        action="store_true",
+        help="Poll only once; ingest whatever is already completed (default: wait until all terminal or timeout)",
+    )
     args = p.parse_args()
 
     use_langfuse = args.csv is None
@@ -122,5 +155,5 @@ if __name__ == "__main__":
         run_id=args.run_id,
         poll_interval_sec=args.interval,
         max_wait_sec=args.max_wait,
-        wait_for_all=args.wait_for_all,
+        wait_for_all=not args.once,
     )

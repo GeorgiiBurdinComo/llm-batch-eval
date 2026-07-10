@@ -549,9 +549,11 @@ def main() -> None:
         "name",
         "userId",
         "sessionId",
+        "tags",
         "metadata.model",
         "metadata.custom_id",
         "metadata.run_id",
+        "metadata.batch_eval",
     ]
 
     SCORE_EXPORT_COLUMNS = [
@@ -562,6 +564,8 @@ def main() -> None:
         "value",
         "stringValue",
         "comment",
+        "tags",
+        "traceTags",
     ]
 
     df_traces = _select_existing_columns(traces_full, TRACE_EXPORT_COLUMNS)
@@ -582,6 +586,7 @@ def main() -> None:
 
     print("Trace columns:", df_traces.columns.tolist())
     print("Score columns:", df_scores.columns.tolist())
+    print_final_counts(df_traces, df_scores)
 
 
 if __name__ == "__main__":
