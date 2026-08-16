@@ -122,11 +122,13 @@ body += [r"    \end{axis}", r"\end{tikzpicture}"]
 print("wrote assets/drift/fig_panel_trajectory.tex")
 
 # ------------------------------------------------------------ GEPA
-run = json.load(open(ROOT / "prompt_optimization" / "runs" / "gpt-4.1-nano"
-                     / "20260713-184939Z" / "gepa_result.json"))
-val = run["val_aggregate_scores"]
+gepa_run_dir = ROOT / "prompt_optimization" / "runs" / "gpt-4.1-nano" / "20260713-184939Z"
+summary = json.loads((gepa_run_dir / "summary.json").read_text())
+history = pd.read_csv(gepa_run_dir / "metrics_history.csv")
+val_rows = history[history["event"] == "valset_evaluated"].sort_values("candidate_idx")
+val = val_rows["val_accuracy"].astype(float).tolist()
 best = pd.Series(val).cummax().tolist()
-bi = run["best_idx"]
+bi = int(summary["best_by_val"]["candidate_idx"])
 cv = " ".join(f"({i},{v:.4f})" for i, v in enumerate(val))
 cb = " ".join(f"({i},{v:.4f})" for i, v in enumerate(best))
 

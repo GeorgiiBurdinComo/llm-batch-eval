@@ -111,11 +111,13 @@ ax.xaxis.set_major_locator(mpl.dates.MonthLocator())
 save(fig, "fig_panel_trajectory")
 
 # ----------------------------------------------------------- figure 2
-run = json.load(open(ROOT / "prompt_optimization" / "runs" / "gpt-4.1-nano"
-                     / "20260713-184939Z" / "gepa_result.json"))
-val = run["val_aggregate_scores"]
+gepa_run_dir = ROOT / "prompt_optimization" / "runs" / "gpt-4.1-nano" / "20260713-184939Z"
+summary = json.loads((gepa_run_dir / "summary.json").read_text())
+history = pd.read_csv(gepa_run_dir / "metrics_history.csv")
+val_rows = history[history["event"] == "valset_evaluated"].sort_values("candidate_idx")
+val = val_rows["val_accuracy"].astype(float).tolist()
 best = pd.Series(val).cummax().tolist()
-best_idx = run["best_idx"]
+best_idx = int(summary["best_by_val"]["candidate_idx"])
 
 fig, ax = plt.subplots(figsize=(4.4, 2.6))
 style(ax)

@@ -29,10 +29,12 @@ Some generated files stay committed because they are rebuild inputs for the thes
 - `prompt_optimization/splits/test.json`
 - `prompt_optimization/splits/split_manifest.json`
 - `notebooks/canonical_evidence_export/`
+- selected GEPA run summaries and metric histories, without exact prompt text
 
 These files support repository-local regeneration of the published tables and figures without making paid provider API calls.
 
 Exploratory notebooks and chart-history dumps are intentionally excluded from the public branch unless they are needed as frozen reproducibility artifacts.
+Exact prompt text artifacts from GEPA runs are intentionally excluded from the public branch; the public surface keeps run summaries, metric histories, and candidate-level scores instead.
 
 ## Replay boundary
 

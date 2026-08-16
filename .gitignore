@@ -30,4 +30,9 @@ notebooks/retrieve.ipynb
 notebooks/statistics.ipynb
 notebooks/gepa_run_campaign_relevance/generated_best_outputs_valset/
 notebooks/gepa_run_campaign_relevance/gepa_state.bin
+prompt_optimization/runs/**/seed_prompt.txt
+prompt_optimization/runs/**/best_prompt.txt
+prompt_optimization/runs/**/best_prompt_conservative.txt
+prompt_optimization/runs/**/gepa_result.json
+prompt_optimization/runs/**/gepa_state/
 *.code-workspace
