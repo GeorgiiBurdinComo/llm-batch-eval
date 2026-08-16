@@ -1,0 +1,6 @@
+model,run_id,path,status,best_val,test,interpretation
+gpt-4.1-nano,20260713-175215Z,prompt_optimization/runs/gpt-4.1-nano/20260713-175215Z/summary.json,present,,,exploratory_existing_artifact
+gpt-4.1-nano,20260713-184939Z,prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/summary.json,present,,,exploratory_existing_artifact
+gpt-4.1-nano,20260714-085521Z,prompt_optimization/runs/gpt-4.1-nano/20260714-085521Z/summary.json,present,,,exploratory_existing_artifact
+gpt-5.4-nano,20260713-175208Z,prompt_optimization/runs/gpt-5.4-nano/20260713-175208Z/summary.json,present,,,exploratory_existing_artifact
+gpt-5.4-nano,20260713-184940Z,prompt_optimization/runs/gpt-5.4-nano/20260713-184940Z/summary.json,present,,,exploratory_existing_artifact

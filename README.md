@@ -2,6 +2,40 @@
 
 Automated weekly evaluation of LLM models (OpenAI, Gemini, Claude) against a ground-truth dataset, with drift monitoring via [Langfuse](https://langfuse.com) and a [Streamlit dashboard](https://llm-eval-dashboard.streamlit.app/).
 
+This repository is the public code and reproducibility repository for the thesis workflow. It owns the batch-evaluation pipeline, Langfuse export logic, prompt-optimisation code, frozen reproducibility inputs, and the canonical evidence rebuild. The manuscript source and publication-ready thesis assets belong in the separate manuscript repository [`GeorgiiBurdinComo/statistical-drift-detection-thesis`](https://github.com/GeorgiiBurdinComo/statistical-drift-detection-thesis).
+
+---
+
+## Repository boundary
+
+This repository contains:
+
+- evaluation runtime code under `scripts/`, `config/`, and `streamlit_app/`
+- prompt-optimisation code under `prompt_optimization/`
+- tests for the pipeline and supporting analysis
+- frozen reproducibility inputs such as `streamlit_app/langfuse_traces.csv`, `streamlit_app/langfuse_scores.csv`, and the split files under `prompt_optimization/splits/`
+- canonical evidence exports under `notebooks/canonical_evidence_export/`
+
+This repository does not need local caches, notebook debris, IDE metadata, or temporary render outputs for publication. Those should stay ignored or be removed before release.
+
+## Committed reproducibility artifacts
+
+Some generated files stay committed because they are rebuild inputs for the thesis evidence:
+
+- `streamlit_app/langfuse_traces.csv`
+- `streamlit_app/langfuse_scores.csv`
+- `prompt_optimization/splits/train.json`
+- `prompt_optimization/splits/val.json`
+- `prompt_optimization/splits/test.json`
+- `prompt_optimization/splits/split_manifest.json`
+- `notebooks/canonical_evidence_export/`
+
+These files support repository-local regeneration of the published tables and figures without making paid provider API calls.
+
+## Replay boundary
+
+This repository can replay the thesis evidence from frozen local artifacts and can rerun the current pipeline against external providers. Exact historical replay still depends on provider-side model behaviour, archived request settings, and the stored manifests available for a given run.
+
 ---
 
 ## How it works
@@ -208,6 +242,11 @@ On the cron run (and when `main` changes under `streamlit_app/`), the workflow e
 ## Repo layout
 
 ```
+canonical_evidence.py        # Canonical evidence rebuild from frozen local inputs
+drift_analysis.py            # Monitoring-side drift summaries from frozen local inputs
+episode_confusion.py         # Companion analysis for alert episodes
+expected_cost_benchmark.py   # Full-benchmark cost comparison rebuild
+make_*.py                    # Thesis-facing figure/table render helpers
 scripts/
   run_eval.py              # Orchestrator: load dataset, submit batches
   poll_and_ingest.py       # Poll providers, download results, ingest
@@ -229,4 +268,6 @@ streamlit_app/
 notebooks/                 # Ad-hoc analysis & prompt experiments
 .github/workflows/         # CI: submit, retrieve, dashboard sync
 ```
+
+The root-level analysis scripts operate on frozen repository-local snapshots and rebuild thesis-facing evidence. The runtime evaluation path remains under `scripts/`.
 

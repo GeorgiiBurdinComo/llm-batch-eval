@@ -1,0 +1,39 @@
+{
+  "analysis_version": "canonical-evidence-v1.0.0",
+  "window": {
+    "start": "2026-03-15T00:00:00+00:00",
+    "end": "2026-07-06T23:59:59.999999+00:00"
+  },
+  "inputs": [
+    {
+      "path": "streamlit_app/langfuse_traces.csv",
+      "sha256": "9d832daf020f2e2809a400bb85ab672cbcea10057f5d9ab8603e61779e665d14",
+      "bytes": 23128923
+    },
+    {
+      "path": "streamlit_app/langfuse_scores.csv",
+      "sha256": "a35db9e2b902a8e41b8629a50bd151d6eb3ba56944e8ffaa085a62f9bcafb393",
+      "bytes": 50099822
+    },
+    {
+      "path": "prompt_optimization/splits/train.json",
+      "sha256": "b07582a19bbb77bd753da77178d69691735b1623b97c0ca9daf9a2ea1adb4ebd",
+      "bytes": 2286105
+    },
+    {
+      "path": "prompt_optimization/splits/val.json",
+      "sha256": "14a7d4d1ad05b929fb67650ac8b0cb5a67f8957197a07cf64c0da504efdc4279",
+      "bytes": 829295
+    },
+    {
+      "path": "prompt_optimization/splits/test.json",
+      "sha256": "ad68e5e64d575aa47c43673a507fb0d45379c86f2b627bac71539584efaa9711",
+      "bytes": 826795
+    },
+    {
+      "path": "prompt_optimization/splits/split_manifest.json",
+      "sha256": "4657d370dfae268890bc72201dc62579342ad771b2ee63ebe382486ada8f8543",
+      "bytes": 220
+    }
+  ]
+}

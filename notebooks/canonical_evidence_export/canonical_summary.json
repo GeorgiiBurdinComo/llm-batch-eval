@@ -1,0 +1,74 @@
+{
+  "analysis_version": "canonical-evidence-v1.0.0",
+  "window": {
+    "start": "2026-03-15T00:00:00+00:00",
+    "end": "2026-07-06T23:59:59.999999+00:00"
+  },
+  "benchmark": {
+    "n": 1199,
+    "positives": 682,
+    "prevalence": 0.5688073394495413
+  },
+  "panel": {
+    "n": 300,
+    "sha256": "bfcfcbb85ab433349f2825616c6baa96d4c2bbbd5a385c82999bac2bb8887e34",
+    "positives": 250,
+    "subset_of_benchmark": true
+  },
+  "monitoring": {
+    "eligible_runs": 187,
+    "models": 12,
+    "comparisons": 173,
+    "raw_significant": 3,
+    "holm_significant": 1,
+    "operational_alerts": 1,
+    "median_discordance": 0.026845637583892617,
+    "operational_floor": 0.05,
+    "trigger_rows": [
+      {
+        "model": "gpt-4.1-mini",
+        "baseline_run_id": "gha-23118723659",
+        "later_run_id": "gha-23349348405",
+        "baseline_started": "2026-03-15 20:36:25.682000+00:00",
+        "later_started": "2026-03-22 18:24:20.131000+00:00",
+        "n_pairs": 296,
+        "acc_baseline": 0.7871621621621622,
+        "acc_later": 0.6621621621621622,
+        "b_degrade": 49,
+        "c_improve": 12,
+        "discordance": 0.20608108108108109,
+        "delta": -0.125,
+        "p_down": 9.84939209043318e-07,
+        "p_down_holm": 0.00017039448316449402,
+        "holm_reject": true,
+        "operational_floor_met": true,
+        "operational_alert": true
+      }
+    ]
+  },
+  "power": {
+    "method": "exact unconditional multinomial power for conditional exact McNemar rejection",
+    "nominal_alpha": 0.05,
+    "family_conservative_alpha": 0.00028901734104046245,
+    "target_power": 0.8,
+    "constraint": "0 <= g <= rho",
+    "reference_rho": 0.12,
+    "nominal_g_80_at_reference_rho": 0.05152359986677765,
+    "family_g_80_at_reference_rho": 0.08323945065960286
+  },
+  "cost": {
+    "day": "2026-05-22",
+    "common_n": 1112,
+    "common_ids_hash": "03fc020393e3a21626953be8c3156aaa2d066c5b7e184c1696e642d401c57080",
+    "models": 8,
+    "R": 0.2,
+    "lambda": 0.186,
+    "winner": "gpt-5-mini",
+    "winner_expected_cost": 0.003697686600719413
+  },
+  "gepa": {
+    "status": "exploratory_existing_artifacts_only",
+    "artifacts_inspected": 5,
+    "paid_api_calls": 0
+  }
+}

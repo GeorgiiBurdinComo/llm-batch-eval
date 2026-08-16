@@ -1,0 +1,34 @@
+\begin{table}[htbp]
+    \centering
+    \footnotesize
+    \caption{Discordance rate $(b+c)/n$ between the baseline and each later
+    monitoring run. Pooled median 0.033, against the
+    pilot estimate $\hat\rho=0.114$ used for sizing in
+    Section~\ref{sec:monitoring-sample-size}.}
+    \label{tab:discordance}
+    \begin{tabular}{lcccc}
+    \toprule
+    Model & Comparisons & Median & Min & Max \\
+    \midrule
+    \texttt{gpt-4.1-nano} & 22 & 0.156 & 0.114 & 0.184 \\
+    \texttt{gpt-5.4-nano} & 3 & 0.127 & 0.118 & 0.134 \\
+    \texttt{gemini-2.0-flash} & 2 & 0.110 & 0.090 & 0.130 \\
+    \texttt{gpt-5-nano} & 22 & 0.104 & 0.080 & 0.121 \\
+    \texttt{gpt-5-mini} & 23 & 0.074 & 0.060 & 0.097 \\
+    \texttt{gemini-2.5-flash} & 14 & 0.074 & 0.020 & 0.087 \\
+    \texttt{gpt-4.1-mini} & 23 & 0.060 & 0.040 & 0.323 \\
+    \texttt{claude-sonnet-5} & 3 & 0.050 & 0.027 & 0.054 \\
+    \texttt{gpt-5.4-mini} & 4 & 0.048 & 0.047 & 0.074 \\
+    \texttt{claude-sonnet-4-5} & 22 & 0.035 & 0.023 & 0.047 \\
+    \texttt{claude-haiku-4-5} & 22 & 0.030 & 0.017 & 0.037 \\
+    \texttt{gpt-5.1} & 21 & 0.030 & 0.020 & 0.043 \\
+    \texttt{gpt-5.4-2026-03-05} & 3 & 0.017 & 0.013 & 0.021 \\
+    \texttt{claude-opus-4-8} & 3 & 0.013 & 0.013 & 0.017 \\
+    \texttt{gpt-5.4} & 18 & 0.013 & 0.007 & 0.017 \\
+    \texttt{claude-sonnet-4-6} & 22 & 0.013 & 0.004 & 0.017 \\
+    \texttt{gpt-5.5} & 3 & 0.010 & 0.003 & 0.010 \\
+    \texttt{gpt-5.2} & 21 & 0.007 & 0.000 & 0.017 \\
+    \texttt{gpt-5} & 22 & 0.005 & 0.000 & 0.013 \\
+    \bottomrule
+    \end{tabular}
+\end{table}

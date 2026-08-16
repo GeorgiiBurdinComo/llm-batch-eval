@@ -1,0 +1,19 @@
+\begin{table}[htbp]
+    \centering
+    \caption{Alert counts over 273 baseline-to-current comparisons
+    (19 models, monitoring runs only). Bonferroni is applied
+    per model over that model's own comparisons.}
+    \label{tab:alert-counts}
+    \begin{tabular}{lr}
+    \toprule
+    Rule & Alerts \\
+    \midrule
+    $b>c$, $p_{\mathrm{exact}}<0.05$ (per-comparison)        & 15 \\
+    $b>c$, $p_{\mathrm{exact}}<\alpha/(T-1)$ (Bonferroni)    & 3 \\
+    Bonferroni and $\Delta\widehat{A}\le-3$pp                 & 3 \\
+    \midrule
+    $\Delta\widehat{A}\le-3$pp alone                          & 17 \\
+    $\Delta\widehat{A}\le-5$pp alone                          & 2 \\
+    \bottomrule
+    \end{tabular}
+\end{table}

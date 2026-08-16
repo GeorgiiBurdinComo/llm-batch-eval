@@ -1,0 +1,99 @@
+{
+  "comparisons": 273,
+  "models": 19,
+  "alert_counts": {
+    "raw": 15,
+    "bonf": 3,
+    "bonf_floor": 3,
+    "3pp": 17,
+    "5pp": 2
+  },
+  "pooled_median_discordance": 0.033444816053511704,
+  "trigger_contingency": {
+    "n": 297,
+    "a": 185,
+    "b": 51,
+    "c": 12,
+    "d": 49,
+    "acc1": 0.7946127946127947,
+    "acc2": 0.6632996632996633,
+    "delta": -0.13131313131313133,
+    "ndis": 63,
+    "discordance": 0.21212121212121213,
+    "p": 3.7298611410823296e-07
+  },
+  "benchmark_days_excluded": [
+    {
+      "model": "gpt-4.1-mini",
+      "day": "2026-05-22",
+      "n_items": 1188,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-4.1-nano",
+      "day": "2026-05-22",
+      "n_items": 1186,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-4.1-nano",
+      "day": "2026-07-13",
+      "n_items": 1189,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-4.1-nano",
+      "day": "2026-07-14",
+      "n_items": 1196,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5",
+      "day": "2026-05-22",
+      "n_items": 1166,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5-mini",
+      "day": "2026-05-22",
+      "n_items": 1191,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5-nano",
+      "day": "2026-05-22",
+      "n_items": 1186,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5.1",
+      "day": "2026-05-22",
+      "n_items": 1188,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5.2",
+      "day": "2026-05-22",
+      "n_items": 1190,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5.4",
+      "day": "2026-05-22",
+      "n_items": 1187,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5.4-nano",
+      "day": "2026-07-13",
+      "n_items": 1196,
+      "run_type": "benchmark"
+    },
+    {
+      "model": "gpt-5.4-nano",
+      "day": "2026-07-14",
+      "n_items": 1188,
+      "run_type": "benchmark"
+    }
+  ]
+}

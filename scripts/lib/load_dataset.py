@@ -94,10 +94,27 @@ def load_csv_rows(csv_path: str) -> List[Dict]:
     return rows
 
 
+def _apply_system_prompt_override(messages: object, system_prompt: str) -> object:
+    if not isinstance(messages, list):
+        return messages
+    out = []
+    replaced = False
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            out.append({**msg, "content": system_prompt})
+            replaced = True
+        else:
+            out.append(msg)
+    if not replaced:
+        out.insert(0, {"role": "system", "content": system_prompt})
+    return out
+
+
 def load_dataset_rows(
     csv_path: Optional[str] = None,
     langfuse_dataset_name: Optional[str] = None,
     body_template_path: Optional[str] = None,
+    system_prompt_override: Optional[str] = None,
 ) -> List[Dict]:
     """Load from CSV (if csv_path set) or Langfuse dataset."""
     if csv_path:
@@ -113,9 +130,12 @@ def load_dataset_rows(
     for idx, item in enumerate(dataset.items):
         cid = (item.metadata or {}).get("custom_id") or item.id
         relevant = bool((item.expected_output or {}).get("campaign_relevant", False)) if isinstance(item.expected_output, dict) else False
+        inp = item.input
+        if system_prompt_override:
+            inp = _apply_system_prompt_override(inp, system_prompt_override)
         rows.append({
             "custom_id": str(cid),
-            "body": {**template, "input": item.input},
+            "body": {**template, "input": inp},
             "campaign_relevant": relevant,
             "row_index": idx,
         })

@@ -1,0 +1,13 @@
+{
+  "dataset_name": "campaign_relevance_02e1a68ccb0f",
+  "seed": 42,
+  "train_ratio": 0.6,
+  "val_ratio": 0.2,
+  "test_ratio": 0.2,
+  "counts": {
+    "train": 719,
+    "val": 239,
+    "test": 241,
+    "total": 1199
+  }
+}

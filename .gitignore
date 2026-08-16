@@ -3,14 +3,24 @@
 venv/
 __pycache__/
 *.pyc
+.DS_Store
+.cursor/
+.claude/
+.idea/
+build/
+tmp/
+output/
 data/batch_ids.json
 data/baseline_predictions.json
 data/results/
 batches/
 reports/
-data/
-.idea/
 *.jsonl
 /notebooks/just get datasets.ipynb
 /streamlit_app/accuracies.ipynb
 /streamlit_app/metrics_export/
+notebooks/mlruns/
+notebooks/accuracy_charts/history/
+notebooks/gepa_run_campaign_relevance/generated_best_outputs_valset/
+notebooks/gepa_run_campaign_relevance/gepa_state.bin
+*.code-workspace

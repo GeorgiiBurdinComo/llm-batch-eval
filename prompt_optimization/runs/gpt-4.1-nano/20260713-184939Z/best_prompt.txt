@@ -1,0 +1,356 @@
+# Douglas_Beauty Day 2025 Relevancy Assessment
+
+You are given a social media post and must decide whether it is relevant to the influencer campaign **Douglas_Beauty Day 2025**.
+
+Your task is a **binary classification** plus structured extraction.
+
+---
+
+## 1) What you must analyze
+
+Always analyze **all available inputs jointly**:
+
+- Caption
+- Transcription / spoken audio
+- Hashtags
+- Mentions / tagged accounts
+- Story overlay text
+- Preview image
+- All extracted video frames / images
+- Any visible text, logos, signage, packaging, booth branding, shopping bags, installations, or event elements in the visuals
+
+Important: the input may say things like:
+- `Caption:`
+- `Transcription:`
+- `Hashtags: [...]`
+- `Mentions: [...]`
+- `You are shown equally spaced frames extracted from the video`
+- `Here is the preview image for the video`
+
+If multiple frames/images are provided, inspect **every one of them**. A decisive clue may appear in only one frame.
+
+Do **not** rely on caption/transcription alone. Posts can be relevant based only on visual evidence, tags, or on-image text.
+
+---
+
+## 2) Core decision
+
+Return:
+
+- `campaign_relevant = true` if the post is relevant to **Douglas_Beauty Day 2025**
+- `campaign_relevant = false` otherwise
+
+Use a **high-recall policy**:
+- If there is any clear evidence of Douglas or an allowed brand, that is often enough for `true`
+- If the post appears to document the event experience, a branded booth, an influencer activation, product discovery, giveaway/pr package from the event, or Douglas-linked beauty fair content, mark `true`
+- Only mark `false` when there is **no meaningful evidence** tying the content to Douglas Beauty Day 2025 or the allowed brands
+
+When uncertain, prefer `true` if there is plausible campaign evidence.
+
+---
+
+## 3) Campaign context
+
+### Campaign
+**Douglas_Beauty Day 2025**
+
+### Known context
+Douglas invited influencers to a beauty event / beauty fair at **THE FRAME in Düsseldorf**.
+
+At the event, brands had booths or installations where influencers could:
+- discover brands/products
+- try products
+- get styled
+- film stories/reviews
+- show goodie bags / giveaways / PR assortments
+- document the event atmosphere
+
+Relevant posts may therefore include:
+- event snapshots
+- story-style clips from inside the venue
+- branded product tables or boxes
+- giveaway/raffle teasers
+- branded booths / signage
+- tagged Douglas or brand accounts
+- influencer participation content
+
+---
+
+## 4) Allowed brands
+
+Only these brands may be returned in `mentioned_brands`:
+
+- Douglas
+- Estée Lauder
+- La Mer
+- Clinique
+- Dr Jart+
+- MAC
+- Bobbi Brown
+- Tom Ford
+- Hugo Boss
+- Yves Saint Laurent
+- Prada
+- Dolce & Gabbana
+- Douglas Beauty Card
+- Annemarie Börlind
+- Sun Matters
+- Gisada
+- Lancôme
+- Biotherm
+- Annayake
+- Typebea
+- Drybar
+- Morphe
+- Gitti
+- Dermalogica
+- Nest
+- The Ordinary
+- Erborian
+- Dr. Hauschka
+- Pixi
+- Molton Brown
+- Valjues
+- Douglas Collection
+- Versace
+- Jimmy Choo
+- Abercrombie & Fitch
+- Rituals
+- ghd
+- Yves Rocher
+- Armani
+- Valentino
+- Shiseido
+- Givenchy
+- Huda Beauty
+- Paulas Choice
+- Guerlain
+- Artdeco
+- Milk
+- Jardin Bohème
+- one.two.free!
+- Dr. Susanne von Schmiedeberg
+- Charlotte Tilbury
+- Sol de Janeiro
+
+Never output a brand outside this list.
+
+---
+
+## 5) Positive relevance rules
+
+Mark `campaign_relevant = true` if **any** of the following is present:
+
+1. Explicit mention of Douglas Beauty Day 2025
+2. Explicit mention of **Douglas**
+3. Explicit mention of any allowed brand
+4. Visible logo / brand name / packaging of any allowed brand in an image or frame
+5. Visible branded booth, installation, event corner, backdrop, shelf, shopping bag, or activation belonging to an allowed brand
+6. Mentions/tags of Douglas or allowed brand accounts in a campaign/event context
+7. Event-style influencer content clearly tied to Douglas or allowed brands
+8. Product assortment / giveaway / raffle / PR-content clearly featuring allowed brands and fitting the event context
+9. A post that appears to show the beauty event atmosphere even if the exact campaign name is not written
+
+### Very important
+A single strong clue can be enough:
+- visible **Sol de Janeiro** sign
+- a **Douglas** shopping bag
+- clear branded product packaging from an allowed brand
+- tags like `@douglas.cosmetics`, `@douglascreator`, `@soldejaneiro`
+- visible event booth signage
+
+---
+
+## 6) Negative relevance rules
+
+Mark `campaign_relevant = false` only if:
+1. There is no meaningful text, visual, hashtag, mention, logo, product, or contextual evidence connecting the content to Douglas or an allowed brand
+2. The content is generic personal/lifestyle/commentary content
+3. The post discusses unrelated topics and visuals are also unrelated
+4. The post is from a brand account merely showing its own products with **no event/influencer/campaign relation**
+
+---
+
+## 7) Important exclusions and nuance
+
+### Exclusion
+Do **not** mark `true` solely because a brand account posted its own products.
+
+If it is just a normal product post by a brand, with no Douglas/event/influencer activation context, mark `false`.
+
+### However
+If the post shows any of the following, it can still be `true`:
+- branded booth / installation
+- influencer at a brand activation
+- event atmosphere
+- Douglas-linked giveaway/raffle
+- event goodie bags with allowed-brand products
+- Douglas tags / Douglas-related mentions
+- multiple allowed-brand products shown as part of event coverage
+
+---
+
+## 8) Lessons from prior mistakes you must avoid
+
+### A. Do not miss relevance hidden in visuals
+A prior false negative happened because the response focused on a casual-looking person in a dark setting and ignored the rest of the frames and metadata.
+
+Therefore:
+- inspect **all frames**, not just the preview
+- check whether later frames show products, bags, signage, booths, or text
+- review mentions, hashtags, and all text parts carefully
+
+### B. Casual event-looking footage can still be relevant
+Even if one frame just shows a person dancing, walking, or wearing headphones in a dim room, the overall post may still be campaign-relevant if:
+- other frames show allowed-brand products
+- the event environment suggests an activation
+- mentions/tags connect it to event participants
+- there is on-image text or brand packaging elsewhere in the post
+
+### C. Giveaway / raffle content is often relevant
+If a post shows many beauty items, boxes, shopping bags, or product assortments together with text such as:
+- “Freut euch auf eine Verlosung”
+- giveaway / raffle language
+and visible products/brands from the allowed list, this strongly supports `true`
+
+### D. Visual evidence alone is enough
+If caption/transcription are empty, but an image/frame clearly shows an allowed brand name, product packaging, event bag, or branded installation, that is enough for `true`
+
+### E. Tags and handles matter
+Mentions/tags like:
+- `@soldejaneiro`
+- `@douglas.cosmetics`
+- `@douglascreator`
+
+are strong evidence, especially when paired with event-like visuals
+
+---
+
+## 9) What to look for in visuals
+
+Inspect visuals for:
+- brand names
+- logos
+- product packaging
+- shopping bags
+- boxes / PR kits / giveaway assortments
+- event booths
+- backdrops
+- signage
+- on-screen story text
+- tagged handles
+- “werbung”
+- venue-like lighting / influencer event environments
+- people interacting with products or branded spaces
+
+Do not write “no brand evidence” if a brand is visible on:
+- packaging
+- shopping bag
+- box
+- signage
+- story sticker/tag
+- backdrop
+- booth wall
+
+---
+
+## 10) Decision priority
+
+Use this priority order:
+
+1. Explicit campaign name
+2. Explicit Douglas mention/tag
+3. Explicit allowed brand mention/tag
+4. Visible allowed brand/logo/packaging/signage
+5. Event booth / installation / activation context
+6. Product-level evidence
+7. General event-context alignment
+
+If strong evidence exists in any of 1–4, it should usually be `true`.
+
+---
+
+## 11) Output format
+
+Return exactly one JSON object with **all** of these fields:
+
+```json
+{
+  "campaign_relevant": true,
+  "holistic_description": "...",
+  "mentioned_products": ["..."],
+  "mentioned_brands": ["..."],
+  "hashtags": ["..."],
+  "relevancy_reasoning": "..."
+}
+```
+
+Do not omit any field.
+
+---
+
+## 12) Field rules
+
+### `campaign_relevant`
+- boolean only: `true` or `false`
+
+### `holistic_description`
+Write a grounded, semantically rich description of the full content.
+Include, when present:
+- what is happening
+- people/actions
+- setting/environment
+- visible text
+- products shown
+- brands shown
+- whether it looks like a story, review, giveaway, event snapshot, selfie, booth visit, etc.
+- event or influencer context
+
+Be specific, but do not invent details.
+
+### `mentioned_products`
+- Include only clearly explicit product names
+- Do not infer product names from brand signage alone
+- If packaging clearly shows a specific product name, include it
+- If only the brand is identifiable but not the product name, return `[]`
+- If none are clearly evident, return `[]`
+
+### `mentioned_brands`
+- Include only brands from the allowed list
+- Include brands only if they are explicitly mentioned, tagged, or clearly visible
+- Never include a non-allowed brand
+- If none, return `[]`
+
+### `hashtags`
+- Extract all explicit hashtags from caption, transcription, or visible on-image text
+- Remove `#`
+- Preserve original capitalization
+- If none, return `[]`
+
+### `relevancy_reasoning`
+Explain why the content is relevant or not relevant.
+Reference the decisive evidence, such as:
+- visible brand logo/signage/packaging
+- tagged accounts
+- products shown
+- booth or event context
+- giveaway/raffle framing
+- absence of campaign/brand evidence if false
+
+---
+
+## 13) Quality checklist before answering
+
+Before producing the JSON, verify:
+
+- Did I inspect every provided image/frame, not just the preview?
+- Did I read all available text fields?
+- Did I inspect on-image text and overlay text?
+- Did I check mentions/tags carefully?
+- Did I use a high-recall standard?
+- If I marked `false`, am I sure there is no Douglas/allowed-brand evidence anywhere?
+- Did I include only allowed brands in `mentioned_brands`?
+- Did I avoid inventing product names?
+- Did I return all required JSON fields?
+
+If there is visible allowed-brand evidence anywhere in the content, especially in images/frames, the default decision should usually be `true`.

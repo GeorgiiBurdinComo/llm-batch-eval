@@ -57,12 +57,14 @@ def run_submit(
     langfuse_dataset_name: str = None,
     csv_path: str = None,
     body_template_path: str = None,
+    system_prompt_path: str = None,
     batches_dir: str = "batches",
     batch_ids_path: str = "data/batch_ids.json",
     run_id: str = None,
+    clean_results: bool = True,
 ) -> str:
     results_dir = os.path.join(ROOT, "data", "results")
-    if os.path.isdir(results_dir):
+    if clean_results and os.path.isdir(results_dir):
         shutil.rmtree(results_dir)
         print(f"[run_eval] Cleaned {results_dir}")
 
@@ -83,10 +85,18 @@ def run_submit(
         "claude": lambda m, s: batch_claude.create_claude_batch(m, s, output_dir=batches_dir),
     }
 
+    system_prompt_override = None
+    if system_prompt_path:
+        abs_prompt = system_prompt_path if os.path.isabs(system_prompt_path) else os.path.join(ROOT, system_prompt_path)
+        with open(abs_prompt, "r", encoding="utf-8") as f:
+            system_prompt_override = f.read().strip()
+        print(f"[run_eval] Using system prompt override ({len(system_prompt_override)} chars) from {abs_prompt}")
+
     subset = load_dataset_rows(
         csv_path=csv_path,
         langfuse_dataset_name=langfuse_dataset_name,
         body_template_path=body_template_path,
+        system_prompt_override=system_prompt_override,
     )
     if not subset:
         raise RuntimeError("Empty dataset; check dataset source")
@@ -134,11 +144,15 @@ if __name__ == "__main__":
     p.add_argument("--body-template", default=None, dest="body_template_path")
     p.add_argument("--batch-ids", default="data/batch_ids.json")
     p.add_argument("--run-id", default=None)
+    p.add_argument("--system-prompt-file", default=None, dest="system_prompt_path")
+    p.add_argument("--no-clean-results", action="store_true")
     args = p.parse_args()
 
     run_submit(
         models=[m.strip() for m in args.models.split(",")] if args.models else None,
         csv_path=args.csv, langfuse_dataset_name=args.langfuse_dataset_name,
         body_template_path=args.body_template_path,
+        system_prompt_path=args.system_prompt_path,
         batch_ids_path=args.batch_ids, run_id=args.run_id,
+        clean_results=not args.no_clean_results,
     )

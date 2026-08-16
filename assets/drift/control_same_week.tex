@@ -1,0 +1,26 @@
+\begin{table}[htbp]
+    \centering
+    \footnotesize
+    \caption{Same-batch control at the 22~March~2026 trigger. Every monitored
+    model is compared against its own pre-trigger baseline on
+    $\mathcal{D}_n$. Only \texttt{gpt-4.1-mini} moves.}
+    \label{tab:control-same-week}
+    \begin{tabular}{llcccrr}
+    \toprule
+    Model & Baseline & $n$ & $b$ & $c$ & $\Delta\widehat{A}$ (pp) & $p_{\mathrm{exact}}$ \\
+    \midrule
+    \texttt{gpt-4.1-mini} & 2026-03-08 & 297 & 51 & 12 & $-13.13$ & $3.7\times 10^{-7}$ \\
+    \texttt{gpt-5-mini} & 2026-03-08 & 296 & 16 & 7 & $-3.04$ & $0.047$ \\
+    \texttt{gpt-5.2} & 2026-03-08 & 297 & 3 & 0 & $-1.01$ & $0.125$ \\
+    \texttt{gpt-4.1-nano} & 2026-03-08 & 298 & 25 & 23 & $-0.67$ & $0.443$ \\
+    \texttt{gpt-5.4-2026-03-05} & 2026-03-08 & 237 & 3 & 2 & $-0.42$ & $0.500$ \\
+    \texttt{claude-sonnet-4-6} & 2026-03-08 & 265 & 1 & 0 & $-0.38$ & $0.500$ \\
+    \texttt{gpt-5-nano} & 2026-03-08 & 298 & 17 & 16 & $-0.34$ & $0.500$ \\
+    \texttt{gpt-5.1} & 2026-03-08 & 298 & 2 & 4 & $+0.67$ & $0.891$ \\
+    \texttt{gpt-5} & 2026-03-08 & 297 & 0 & 2 & $+0.67$ & $1.000$ \\
+    \texttt{claude-sonnet-4-5} & 2026-03-08 & 264 & 4 & 6 & $+0.76$ & $0.828$ \\
+    \texttt{gemini-2.5-flash} & 2026-03-08 & 298 & 10 & 13 & $+1.01$ & $0.798$ \\
+    \texttt{claude-haiku-4-5} & 2026-03-08 & 265 & 2 & 6 & $+1.51$ & $0.965$ \\
+    \bottomrule
+    \end{tabular}
+\end{table}

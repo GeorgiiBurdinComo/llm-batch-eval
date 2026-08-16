@@ -1,0 +1,35 @@
+{
+  "model": "gpt-4.1-nano",
+  "dataset_name": "campaign_relevance_02e1a68ccb0f",
+  "run_id": "20260713-184939Z",
+  "reflection_lm": "openai/gpt-5.4",
+  "max_metric_calls": 1500,
+  "skip_perfect_score": false,
+  "val_margin_for_conservative_selection": 0.02,
+  "counts": {
+    "train": 719,
+    "val": 239,
+    "test": 241
+  },
+  "baseline": {
+    "val_accuracy": 0.7656903765690377,
+    "test_accuracy": 0.7842323651452282
+  },
+  "best_by_val": {
+    "candidate_idx": 2,
+    "val_accuracy": 0.7949790794979079,
+    "test_accuracy": 0.7676348547717843
+  },
+  "best_conservative": {
+    "candidate_idx": 2,
+    "val_accuracy": 0.7949790794979079,
+    "test_accuracy": 0.7676348547717843
+  },
+  "total_metric_calls": 1500,
+  "artifacts": {
+    "metrics_history_csv": "/Users/georgiiburdi/DataspellProjects/benchmark_eval/prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/metrics_history.csv",
+    "candidates_csv": "/Users/georgiiburdi/DataspellProjects/benchmark_eval/prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/candidates.csv",
+    "best_prompt_txt": "/Users/georgiiburdi/DataspellProjects/benchmark_eval/prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/best_prompt.txt",
+    "best_prompt_conservative_txt": "/Users/georgiiburdi/DataspellProjects/benchmark_eval/prompt_optimization/runs/gpt-4.1-nano/20260713-184939Z/best_prompt_conservative.txt"
+  }
+}
