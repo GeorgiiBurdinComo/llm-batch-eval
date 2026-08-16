@@ -32,6 +32,8 @@ Some generated files stay committed because they are rebuild inputs for the thes
 
 These files support repository-local regeneration of the published tables and figures without making paid provider API calls.
 
+Exploratory notebooks and chart-history dumps are intentionally excluded from the public branch unless they are needed as frozen reproducibility artifacts.
+
 ## Replay boundary
 
 This repository can replay the thesis evidence from frozen local artifacts and can rerun the current pipeline against external providers. Exact historical replay still depends on provider-side model behaviour, archived request settings, and the stored manifests available for a given run.
